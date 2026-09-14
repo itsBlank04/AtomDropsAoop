@@ -12,21 +12,15 @@ const vendorLinks = [
   { to: "/vendor/reviews", label: "Reviews", icon: "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" },
 ]
 
-const technicianLinks = [
-  { to: "/repair/dashboard", label: "Dashboard", icon: "M4 6h16M4 10h16M4 14h16M4 18h16" },
-  { to: "/repair/requests", label: "Requests", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
-  { to: "/repair/jobs", label: "Jobs", icon: "M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
-]
-
 export default function Sidebar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { activeRole, setActiveRole } = useAuth()
   const location = useLocation()
 
-  const links = activeRole === 'vendor' ? vendorLinks : activeRole === 'technician' ? technicianLinks : []
+  const links = activeRole === 'vendor' ? vendorLinks : []
 
   if (activeRole === null) return null
 
-  const modeLabel = activeRole === 'vendor' ? 'Merchant Mode' : 'Repair Mode'
+  const modeLabel = 'Merchant Mode'
   const modeColor = 'bg-[#221b16]'
   const modeColorLight = 'bg-[#221b16]/10 text-[#221b16] hover:bg-[#221b16]/20'
 
@@ -65,7 +59,7 @@ export default function Sidebar({ open, onToggle }: { open: boolean; onToggle: (
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c7564]">{modeLabel}</p>
-            <p className="truncate text-sm font-medium text-[#221b16]">{activeRole === 'vendor' ? 'Vendor Panel' : 'Technician Panel'}</p>
+            <p className="truncate text-sm font-medium text-[#221b16]">Vendor Panel</p>
           </div>
           <button
             onClick={onToggle}
@@ -85,7 +79,7 @@ export default function Sidebar({ open, onToggle }: { open: boolean; onToggle: (
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
             </span>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-medium text-[#221b16]">{activeRole === 'vendor' ? 'Merchant' : 'Craftsman'}</p>
+              <p className="text-[11px] font-medium text-[#221b16]">Merchant</p>
               <p className="text-[9px] font-medium uppercase tracking-wider text-emerald-600">Active</p>
             </div>
           </div>

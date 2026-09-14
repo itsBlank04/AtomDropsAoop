@@ -81,7 +81,7 @@ const TAB_META: Record<TabId, { label: string; icon: string; desc: string; empty
     label: 'Technician',
     icon: '🔧',
     desc: 'Repair job chats',
-    emptyTitle: 'No technician conversations',
+    emptyTitle: 'No conversations yet',
     emptyDesc: 'Conversations appear after a repair job is booked',
   },
 }

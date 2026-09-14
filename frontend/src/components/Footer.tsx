@@ -9,7 +9,7 @@ const sections = [
       { label: 'Products', to: '/products' },
       { label: 'Auctions', to: '/auctions' },
       { label: 'Used Items', to: '/used-listings' },
-      { label: 'Repairs', to: '/repair/technicians' },
+      { label: 'Auctions', to: '/auctions' },
       { label: 'Vendors', to: '/shop' },
       { label: 'Become a Vendor', to: '/profile#role-upgrade' },
     ],

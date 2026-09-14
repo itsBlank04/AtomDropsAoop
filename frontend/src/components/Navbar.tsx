@@ -88,9 +88,7 @@ export default function Navbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
     const prev = prevRole.current
     prevRole.current = activeRole
     if (prev === 'vendor' && activeRole !== 'vendor' && location.pathname.startsWith('/vendor')) {
-      navigate(activeRole === 'technician' ? '/repair/dashboard' : '/', { replace: true })
-    } else if (prev === 'technician' && activeRole !== 'technician' && location.pathname.startsWith('/repair')) {
-      navigate(activeRole === 'vendor' ? '/vendor/dashboard' : '/', { replace: true })
+      navigate('/', { replace: true })
     }
   }, [activeRole, location.pathname, navigate])
 
@@ -122,7 +120,6 @@ export default function Navbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
           <div className="hidden items-center gap-0.5 md:flex">
             {[
               { to: '/used', label: 'Used Items' },
-              { to: '/repair', label: 'Repairs' },
               { to: '/auctions', label: 'Auctions' },
             ].map(link => (
               <Link
@@ -246,23 +243,10 @@ export default function Navbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
                         </span>
                       </button>
                     )}
-                    {subscribedRoles.includes('technician') && (
-                      <button
-                        onClick={() => setActiveRole(activeRole === 'technician' ? null : 'technician')}
-                        className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-sm text-[#221b16] hover:bg-[#f9f5f0]"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span>🔧</span>
-                          <span>Repair</span>
-                        </div>
-                        <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-300 ${activeRole === 'technician' ? 'bg-emerald-500' : 'bg-[#e4d6c8]'}`}>
-                          <span className={`inline-block h-[14px] w-[14px] transform rounded-full bg-white shadow-sm transition-transform duration-300 ${activeRole === 'technician' ? 'translate-x-[20px]' : 'translate-x-[2px]'}`} />
-                        </span>
-                      </button>
-                    )}
+
                   </div>
                 )}
-                {!hasRole('VENDOR') && !hasRole('TECHNICIAN') && (
+                {!hasRole('VENDOR') && (
                   <Link to="/profile#role-upgrade" onClick={() => setMenuOpen(false)} className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-[#221b16] hover:bg-[#f9f5f0]">
                     <span className="flex items-center gap-2">
                       <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-[#8c7564]">
@@ -273,7 +257,7 @@ export default function Navbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
                     <span className="rounded-full bg-[#f9f5f0] px-2 py-0.5 text-[10px] font-semibold text-[#6c5b4f]">New</span>
                   </Link>
                 )}
-                <Link to="/repair/requests" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-[#221b16] hover:bg-[#f9f5f0]">My Repairs</Link>
+
                 {hasRole('ADMIN') && (
                   <Link to="/admin" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-[#221b16] hover:bg-[#f9f5f0]">Admin Console</Link>
                 )}
