@@ -1,0 +1,98 @@
+package com.atomdrops.product.service;
+
+import com.atomdrops.product.model.Inventory;
+import com.atomdrops.product.model.Product;
+import com.atomdrops.product.model.ProductImage;
+import com.atomdrops.product.repository.InventoryRepository;
+import com.atomdrops.product.repository.ProductRepository;
+import java.math.BigDecimal;
+import java.time.Instant;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ProductService {
+
+    private final ProductRepository productRepository;
+    private final InventoryRepository inventoryRepository;
+
+    public ProductService(ProductRepository productRepository, InventoryRepository inventoryRepository) {
+        this.productRepository = productRepository;
+        this.inventoryRepository = inventoryRepository;
+    }
+
+    public Page<Product> getActiveProducts(Pageable pageable) {
+        return productRepository.findByStatus("ACTIVE", pageable);
+    }
+
+    @Transactional
+    public Product recordView(Long id) {
+        Product product = getProduct(id);
+        product.setViewCount(product.getViewCount() + 1);
+        return productRepository.save(product);
+    }
+
+    public Product getProduct(Long id) {
+        return productRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+    }
+
+    public Page<Product> searchProducts(String search, Long category, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable) {
+        return productRepository.searchProducts(search, category, minPrice, maxPrice, pageable);
+    }
+
+    @Transactional
+    public Product createProduct(Product product) {
+        return productRepository.save(product);
+    }
+
+    @Transactional
+    public Product updateProduct(Long id, Product updated) {
+        Product existing = getProduct(id);
+        if (updated.getName() != null) existing.setName(updated.getName());
+        if (updated.getDescription() != null) existing.setDescription(updated.getDescription());
+        if (updated.getPriceBdt() != null) existing.setPriceBdt(updated.getPriceBdt());
+        if (updated.getCategory() != null) existing.setCategory(updated.getCategory());
+        return productRepository.save(existing);
+    }
+
+    @Transactional
+    public void softDeleteProduct(Long id) {
+        Product product = getProduct(id);
+        product.setDeletedAt(Instant.now());
+        productRepository.save(product);
+    }
+
+    @Transactional
+    public Product addProductImage(Long productId, String imageUrl) {
+        Product product = getProduct(productId);
+        ProductImage img = new ProductImage();
+        img.setProduct(product);
+        img.setImageUrl(imageUrl);
+        img.setSortOrder(product.getImages().size());
+        product.getImages().add(img);
+        return productRepository.save(product);
+    }
+
+    public Inventory getInventory(Long productId) {
+        return inventoryRepository.findByProductIdAndProductVariantIdIsNull(productId)
+            .orElseGet(() -> {
+                Inventory inv = new Inventory();
+                inv.setProduct(getProduct(productId));
+                inv.setStockQty(0);
+                inv.setLowStockThreshold(5);
+                return inventoryRepository.save(inv);
+            });
+    }
+
+    @Transactional
+    public Inventory updateInventory(Long productId, int stockQty, int lowStockThreshold) {
+        Inventory inv = getInventory(productId);
+        inv.setStockQty(stockQty);
+        inv.setLowStockThreshold(lowStockThreshold);
+        return inventoryRepository.save(inv);
+    }
+
+}

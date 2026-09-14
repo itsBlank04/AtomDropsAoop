@@ -1,2 +1,62 @@
-# Root-level stray artifacts
+# ================= Build outputs =================
+backend/target/
+target/
+frontend/dist/
+frontend/dist-ssr/
+*.tsbuildinfo
+
+# ================= Dependencies =================
+node_modules/
+
+# ================= Maven =================
+.mvn/wrapper/maven-wrapper.jar
+HELP.md
+
+# ================= IDE / editors =================
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.sts4-cache
+
+# ================= Environment & secrets =================
+.env
+.env.*
+!.env.example
+
+# ================= Logs & runtime artifacts =================
+logs/
+*.log
+*.err
+hs_err_pid*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+dogfood-output/
+cookies.txt
+agent-browser/
+
+# ================= Test artifacts =================
+reg-*.json
+temp-reg.json
+
+# ================= OS =================
+.DS_Store
+
+# ================= Stray / one-off artifacts =================
 demo.zip
+demo *.zip
+New folder/
+Expert Repairs AtomDrops Design Code reference .md
+repair modul frontend full/

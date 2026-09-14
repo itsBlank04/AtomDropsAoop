@@ -3,37 +3,41 @@
 ## Repo layout
 
 ```
-ATOM/
-├── demo/                    # monorepo root
-│   ├── pom.xml              # Spring Boot 4.0.6, Java 21, Maven
-│   ├── mvnw / mvnw.cmd      # Maven wrapper
-│   ├── src/                 # Java backend
-│   ├── frontend/            # React 19 + TypeScript 6 + Vite 8
-│   │   ├── package.json
-│   │   └── src/main.tsx     # frontend entrypoint
-│   ├── supabase-migration.sql  # full 71-table schema (manual SQL)
-│   └── scripts/             # Node.js QA scripts (ESM, .mjs)
-├── master.md                # architecture doc
-├── auction.md               # auction spec
-└── test-upgrade.ps1         # upgrade flow test
+oopproject/                     # repo root
+├── backend/                    # Spring Boot 4.0.6, Java 21, Maven
+│   ├── pom.xml
+│   ├── mvnw / mvnw.cmd         # Maven wrapper
+│   └── src/
+│       ├── main/java/com/atomdrops/   # Java backend (com.atomdrops)
+│       └── main/resources/     # application.properties, schema.sql
+├── frontend/                   # React 19 + TypeScript + Vite 8
+│   ├── package.json
+│   └── src/main.tsx            # frontend entrypoint
+├── docs/                       # architecture docs & specs
+│   ├── master.md / auction.md / projectoverview.md / schema.md
+│   └── images/                 # screenshots / diagrams
+├── scripts/                    # Node.js QA scripts (ESM, .mjs), reset-database.sql, test-upgrade.ps1
+│   └── package.json            # deps for QA scripts (pg)
+├── README.md
+└── AGENTS.md
 ```
 
 ## Commands
 
-All run from `demo/` unless noted.
+All run from the repo root unless noted.
 
 | action | command |
 |---|---|
-| **Backend build** | `./mvnw clean package` |
-| **Backend run** | `./mvnw spring-boot:run` (runs on :8080) |
-| **Backend quick start** | `java -jar target/demo-0.0.1-SNAPSHOT.jar` |
-| **Backend test** | `./mvnw test` (one `@SpringBootTest` context-loads test) |
-| **Frontend dev** | `npm run dev` from `demo/frontend/` (:5173) |
-| **Frontend build** | `npm run build` from `demo/frontend/` (runs `tsc -b && vite build`) |
-| **Frontend lint** | `npm run lint` from `demo/frontend/` |
-| **E2E smoke test** | `node scripts/qa-e2e-smoke.mjs` from `demo/` |
-| **Seed flash auction** | `node scripts/qa-seed-countdown-auction.mjs` from `demo/` |
-| **Upgrade flow test** | `.\test-upgrade.ps1` from repo root |
+| **Backend build** | `./mvnw clean package` from `backend/` |
+| **Backend run** | `./mvnw spring-boot:run` from `backend/` (runs on :8080) |
+| **Backend quick start** | `java -jar backend/target/atomdrops-0.0.1-SNAPSHOT.jar` |
+| **Backend test** | `./mvnw test` from `backend/` (one `@SpringBootTest` context-loads test) |
+| **Frontend dev** | `npm run dev` from `frontend/` (:5173) |
+| **Frontend build** | `npm run build` from `frontend/` (runs `tsc -b && vite build`) |
+| **Frontend lint** | `npm run lint` from `frontend/` |
+| **E2E smoke test** | `node scripts/qa-e2e-smoke.mjs` |
+| **Seed flash auction** | `node scripts/qa-seed-countdown-auction.mjs` |
+| **Upgrade flow test** | `./scripts/test-upgrade.ps1` |
 
 ## Auth
 
@@ -47,7 +51,7 @@ All run from `demo/` unless noted.
 ## Database
 
 - Supabase PostgreSQL 15. Password in `application.properties` uses `\#` to escape `#`: `\#qQ33847099`.
-- Schema managed manually — `supabase-migration.sql` is the source of truth. `ddl-auto=update` is on for dev convenience.
+- Schema managed manually — `backend/src/main/resources/schema.sql` (design doc in `docs/schema.md`) is the source of truth. `ddl-auto=update` is on for dev convenience.
 - `spring.sql.init.mode=never` — use Supabase SQL Editor in production.
 
 ## Architecture quirks
@@ -62,7 +66,7 @@ All run from `demo/` unless noted.
 
 ## Testing
 
-- Only **one JUnit test** exists (`DemoApplicationTests.contextLoads`).
+- Only **one JUnit test** exists (`AtomDropsApplicationTests.contextLoads`).
 - Real test coverage is via **Node.js ESM scripts** (`scripts/*.mjs`) that connect directly to the DB via `pg` client.
 - QA expects `QA_BASE_URL` (default `http://localhost:8080`) and `QA_ADMIN_EMAIL` / `QA_ADMIN_PASSWORD` env vars.
 - No CI/CD workflows exist.

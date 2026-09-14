@@ -1,0 +1,13 @@
+package com.atomdrops.repair.repository;
+import com.atomdrops.repair.model.RepairBooking;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+import java.util.Optional;
+public interface RepairBookingRepository extends JpaRepository<RepairBooking, Long> {
+    Optional<RepairBooking> findByRequestId(Long requestId);
+    List<RepairBooking> findByTechnicianId(Long technicianId);
+    List<RepairBooking> findByTechnicianIdAndStatus(Long technicianId, String status);
+    List<RepairBooking> findByRequestCustomerId(Long customerId);
+    Optional<RepairBooking> findByWorkOrderId(String workOrderId);
+    long countByTechnicianIdAndStatus(Long technicianId, String status);
+}

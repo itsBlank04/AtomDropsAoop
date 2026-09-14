@@ -1,0 +1,472 @@
+package com.atomdrops.order.service;
+
+import com.atomdrops.user.model.Address;
+import com.atomdrops.user.model.BanHistory;
+import com.atomdrops.order.model.Cart;
+import com.atomdrops.order.model.CartItem;
+import com.atomdrops.chat.model.Conversation;
+import com.atomdrops.chat.model.ConversationMember;
+import com.atomdrops.product.model.Coupon;
+import com.atomdrops.product.model.Inventory;
+import com.atomdrops.notification.model.Notification;
+import com.atomdrops.order.model.Order;
+import com.atomdrops.order.model.OrderItem;
+import com.atomdrops.trust.model.TrustEvent;
+import com.atomdrops.trust.model.TrustScore;
+import com.atomdrops.user.model.User;
+import com.atomdrops.shop.model.VendorCommission;
+import com.atomdrops.user.repository.AddressRepository;
+import com.atomdrops.user.repository.BanHistoryRepository;
+import com.atomdrops.order.repository.CartItemRepository;
+import com.atomdrops.chat.repository.ConversationMemberRepository;
+import com.atomdrops.chat.repository.ConversationRepository;
+import com.atomdrops.product.repository.CouponRepository;
+import com.atomdrops.product.repository.InventoryRepository;
+import com.atomdrops.notification.repository.NotificationRepository;
+import com.atomdrops.order.repository.OrderItemRepository;
+import com.atomdrops.order.repository.OrderRepository;
+import com.atomdrops.admin.repository.PlatformSettingRepository;
+import com.atomdrops.trust.repository.TrustEventRepository;
+import com.atomdrops.trust.repository.TrustScoreRepository;
+import com.atomdrops.user.repository.UserRepository;
+import com.atomdrops.shop.repository.VendorCommissionRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import com.atomdrops.trust.service.TrustService;
+
+@Service
+public class OrderService {
+
+    private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final CartItemRepository cartItemRepository;
+    private final CartService cartService;
+    private final CouponRepository couponRepository;
+    private final InventoryRepository inventoryRepository;
+    private final UserRepository userRepository;
+    private final AddressRepository addressRepository;
+    private final VendorCommissionRepository vendorCommissionRepository;
+    private final NotificationRepository notificationRepository;
+    private final ConversationRepository conversationRepository;
+    private final ConversationMemberRepository conversationMemberRepository;
+    private final TrustScoreRepository trustScoreRepository;
+    private final TrustEventRepository trustEventRepository;
+    private final BanHistoryRepository banHistoryRepository;
+    private final PlatformSettingRepository platformSettingRepository;
+    private final TrustService trustService;
+
+    public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository, CartItemRepository cartItemRepository, CartService cartService, CouponRepository couponRepository, InventoryRepository inventoryRepository, UserRepository userRepository, AddressRepository addressRepository, VendorCommissionRepository vendorCommissionRepository, NotificationRepository notificationRepository, ConversationRepository conversationRepository, ConversationMemberRepository conversationMemberRepository, TrustScoreRepository trustScoreRepository, TrustEventRepository trustEventRepository, BanHistoryRepository banHistoryRepository, PlatformSettingRepository platformSettingRepository, TrustService trustService) {
+        this.orderRepository = orderRepository;
+        this.orderItemRepository = orderItemRepository;
+        this.cartItemRepository = cartItemRepository;
+        this.cartService = cartService;
+        this.couponRepository = couponRepository;
+        this.inventoryRepository = inventoryRepository;
+        this.userRepository = userRepository;
+        this.addressRepository = addressRepository;
+        this.vendorCommissionRepository = vendorCommissionRepository;
+        this.notificationRepository = notificationRepository;
+        this.conversationRepository = conversationRepository;
+        this.conversationMemberRepository = conversationMemberRepository;
+        this.trustScoreRepository = trustScoreRepository;
+        this.trustEventRepository = trustEventRepository;
+        this.banHistoryRepository = banHistoryRepository;
+        this.platformSettingRepository = platformSettingRepository;
+        this.trustService = trustService;
+    }
+
+    @Transactional
+    public Order checkout(Long userId, Long shippingAddressId, String couponCode, String shippingOption) {
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        Cart cart = cartService.initiateCheckout(userId);
+        List<CartItem> cartItems = cartItemRepository.findByCartId(cart.getId());
+
+        if (cartItems.isEmpty()) {
+            throw new IllegalArgumentException("Cart is empty");
+        }
+
+        for (CartItem cartItem : cartItems) {
+            if (cartItem.getProduct() != null
+                && cartItem.getProduct().getVendor() != null
+                && cartItem.getProduct().getVendor().getId().equals(userId)) {
+                throw new IllegalArgumentException("You cannot purchase your own product");
+            }
+            if (cartItem.getUsedListing() != null
+                && cartItem.getUsedListing().getSeller() != null
+                && cartItem.getUsedListing().getSeller().getId().equals(userId)) {
+                throw new IllegalArgumentException("You cannot purchase your own listing");
+            }
+        }
+
+        Address shippingAddress = addressRepository.findById(shippingAddressId)
+            .orElseThrow(() -> new IllegalArgumentException("Shipping address not found"));
+
+        // Calculate subtotal first
+        BigDecimal subtotal = BigDecimal.ZERO;
+        boolean hasPaidShipping = false;
+        for (CartItem cartItem : cartItems) {
+            BigDecimal unitPrice = BigDecimal.ZERO;
+            if (cartItem.getProduct() != null) {
+                unitPrice = cartItem.getProduct().getPriceBdt();
+                if ("PAID".equals(cartItem.getProduct().getShippingType())) {
+                    hasPaidShipping = true;
+                }
+            } else if (cartItem.getUsedListing() != null) {
+                unitPrice = cartItem.getUsedListing().getPriceBdt();
+            }
+            subtotal = subtotal.add(unitPrice.multiply(BigDecimal.valueOf(cartItem.getQty())));
+        }
+
+        // Calculate discount
+        BigDecimal discount = BigDecimal.ZERO;
+        Coupon coupon = null;
+        if (couponCode != null && !couponCode.isEmpty()) {
+            coupon = couponRepository.findByCodeAndIsActiveTrue(couponCode)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid coupon code"));
+
+            if ("PERCENT".equals(coupon.getDiscountType())) {
+                discount = subtotal.multiply(coupon.getDiscountValue()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                if (coupon.getMaxDiscountBdt() != null && discount.compareTo(coupon.getMaxDiscountBdt()) > 0) {
+                    discount = coupon.getMaxDiscountBdt();
+                }
+            } else if ("FLAT".equals(coupon.getDiscountType())) {
+                discount = coupon.getDiscountValue();
+            }
+        }
+
+        // Calculate shipping fee
+        String resolvedOption = null;
+        BigDecimal shippingFee = BigDecimal.ZERO;
+        if (hasPaidShipping) {
+            if (shippingOption == null || shippingOption.isBlank()) {
+                throw new IllegalArgumentException("Shipping option required (INSIDE_DHAKA or OUTSIDE_DHAKA)");
+            }
+            resolvedOption = shippingOption;
+            shippingFee = "INSIDE_DHAKA".equals(shippingOption)
+                ? new BigDecimal("60.00")
+                : new BigDecimal("100.00");
+        }
+
+        BigDecimal tax = BigDecimal.ZERO;
+        BigDecimal total = subtotal.subtract(discount).add(shippingFee).add(tax);
+
+        // Create and SAVE order FIRST (so it gets an ID for FK references)
+        Order order = new Order();
+        order.setCustomer(user);
+        order.setShippingAddress(shippingAddress);
+        order.setStatus("PLACED");
+        order.setSubtotalBdt(subtotal);
+        order.setDiscountBdt(discount);
+        order.setShippingFeeBdt(shippingFee);
+        order.setTaxBdt(tax);
+        order.setTotalBdt(total);
+        if (coupon != null) {
+            order.setCoupon(coupon);
+        }
+
+        if (resolvedOption != null) {
+            order.setShippingOption(resolvedOption);
+        } else {
+            order.setShippingOption(null);
+        }
+
+        Order savedOrder = orderRepository.save(order);
+
+        // NOW create order items (order has an ID)
+        for (CartItem cartItem : cartItems) {
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(savedOrder);
+            orderItem.setItemType(cartItem.getItemType());
+            orderItem.setProduct(cartItem.getProduct());
+            orderItem.setProductVariant(cartItem.getProductVariant());
+            orderItem.setUsedListing(cartItem.getUsedListing());
+            orderItem.setQty(cartItem.getQty());
+
+            BigDecimal unitPrice = BigDecimal.ZERO;
+            if (cartItem.getProduct() != null) {
+                unitPrice = cartItem.getProduct().getPriceBdt();
+            } else if (cartItem.getUsedListing() != null) {
+                unitPrice = cartItem.getUsedListing().getPriceBdt();
+            }
+            orderItem.setUnitPriceBdt(unitPrice);
+            orderItemRepository.save(orderItem);
+            savedOrder.getItems().add(orderItem);
+
+            // Decrement inventory
+            if (cartItem.getProduct() != null) {
+                Long variantId = cartItem.getProductVariant() != null ? cartItem.getProductVariant().getId() : null;
+                Inventory inv = variantId != null
+                    ? inventoryRepository.findByProductIdAndProductVariantId(cartItem.getProduct().getId(), variantId).orElse(null)
+                    : inventoryRepository.findByProductIdAndProductVariantIdIsNull(cartItem.getProduct().getId()).orElse(null);
+
+                if (inv != null) {
+                    int newQty = inv.getStockQty() - cartItem.getQty();
+                    if (newQty < 0) {
+                        throw new IllegalArgumentException("Insufficient stock for: " + cartItem.getProduct().getName());
+                    }
+                    inv.setStockQty(newQty);
+                    inventoryRepository.save(inv);
+                }
+
+                // Create vendor commission
+                User vendor = cartItem.getProduct().getVendor();
+                if (vendor != null) {
+                    VendorCommission commission = new VendorCommission();
+                    commission.setOrderItem(orderItem);
+                    commission.setVendor(vendor);
+                    commission.setSaleAmountBdt(unitPrice.multiply(BigDecimal.valueOf(cartItem.getQty())));
+                    commission.setCommissionRate(BigDecimal.ZERO);
+                    commission.setCommissionBdt(BigDecimal.ZERO);
+                    commission.setNetPayoutBdt(commission.getSaleAmountBdt());
+                    commission.setStatus("PENDING");
+                    vendorCommissionRepository.save(commission);
+
+                    // Notify vendor
+                    Notification notification = new Notification();
+                    notification.setUser(vendor);
+                    notification.setType("NEW_ORDER");
+                    notification.setTitle("New order received");
+                    notification.setBody("You have a new order for " + cartItem.getProduct().getName() + " (x" + cartItem.getQty() + ")");
+                    notification.setEntityType("ORDER");
+                    notification.setEntityId(savedOrder.getId());
+                    notificationRepository.save(notification);
+                }
+            }
+        }
+
+        // Auto-create order conversations (buyer ↔ each vendor)
+        for (CartItem cartItem : cartItems) {
+            User vendor = resolveVendor(cartItem);
+            if (vendor == null || vendor.getId().equals(userId)) continue;
+            final User finalVendor = vendor;
+
+            // Check if conversation already exists for this order+vendor
+            boolean existingConv = conversationMemberRepository.findByUserId(userId).stream()
+                .anyMatch(m -> "ORDER".equals(m.getConversation().getType())
+                    && savedOrder.getId().equals(m.getConversation().getEntityId())
+                    && conversationMemberRepository.existsByConversationIdAndUserId(m.getConversation().getId(), finalVendor.getId()));
+            if (!existingConv) {
+                Conversation conv = new Conversation();
+                conv.setType("ORDER");
+                conv.setEntityType("ORDER");
+                conv.setEntityId(savedOrder.getId());
+                conv.setTitle("Order #" + savedOrder.getId());
+                conv.setStatus("OPEN");
+                conv = conversationRepository.save(conv);
+                ConversationMember buyerMember = new ConversationMember();
+                buyerMember.setConversation(conv);
+                buyerMember.setUser(user);
+                buyerMember.setRole("BUYER");
+                conversationMemberRepository.save(buyerMember);
+                ConversationMember sellerMember = new ConversationMember();
+                sellerMember.setConversation(conv);
+                sellerMember.setUser(finalVendor);
+                sellerMember.setRole("SELLER");
+                conversationMemberRepository.save(sellerMember);
+            }
+        }
+
+        // Mark cart as completed
+        cartService.completeCheckout(userId);
+        cartService.clearCart(cart.getId());
+
+        return savedOrder;
+    }
+
+    public List<Order> getOrders(Long userId) {
+        return orderRepository.findByCustomerIdOrderByCreatedAtDesc(userId);
+    }
+
+    public Order getOrderById(Long id) {
+        return orderRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+    }
+
+    public List<Order> getVendorOrders(Long vendorId) {
+        List<VendorCommission> commissions = vendorCommissionRepository.findByVendorId(vendorId);
+        return commissions.stream()
+            .map(c -> c.getOrderItem().getOrder())
+            .distinct()
+            .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+            .toList();
+    }
+
+    @Transactional
+    public Order updateOrderStatus(Long orderId, Long vendorId, String newStatus) {
+        Order order = orderRepository.findById(orderId)
+            .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+        boolean isVendorOrder = vendorCommissionRepository.existsByVendorIdAndOrderId(vendorId, orderId);
+        if (!isVendorOrder) throw new SecurityException("Not your order");
+
+        String current = order.getStatus();
+
+        // PLACED → APPROVED (vendor approves)
+        if ("PLACED".equals(current) && "APPROVED".equals(newStatus)) {
+            order.setStatus("APPROVED");
+            Order saved = orderRepository.save(order);
+            Notification n = new Notification();
+            n.setUser(order.getCustomer());
+            n.setType("ORDER_APPROVED");
+            n.setTitle("Order #" + orderId + " approved");
+            n.setBody("Your order #" + orderId + " has been approved by the vendor.");
+            n.setEntityType("ORDER");
+            n.setEntityId(orderId);
+            notificationRepository.save(n);
+
+            trustService.adjustScore(vendorId, new BigDecimal("1"),
+                "ORDER_APPROVED",
+                "Approved order #" + orderId);
+            return saved;
+        }
+
+        // APPROVED → PACKED (vendor packs)
+        if ("APPROVED".equals(current) && "PACKED".equals(newStatus)) {
+            order.setStatus("PACKED");
+            Order saved = orderRepository.save(order);
+            Notification n = new Notification();
+            n.setUser(order.getCustomer());
+            n.setType("ORDER_PACKED");
+            n.setTitle("Order #" + orderId + " packed");
+            n.setBody("Your order #" + orderId + " has been packed and is ready for shipping.");
+            n.setEntityType("ORDER");
+            n.setEntityId(orderId);
+            notificationRepository.save(n);
+            return saved;
+        }
+
+        // PACKED → SHIPPED (vendor ships)
+        if ("PACKED".equals(current) && "SHIPPED".equals(newStatus)) {
+            order.setStatus("SHIPPED");
+            Order saved = orderRepository.save(order);
+            Notification n = new Notification();
+            n.setUser(order.getCustomer());
+            n.setType("ORDER_SHIPPED");
+            n.setTitle("Order #" + orderId + " shipped");
+            n.setBody("Your order #" + orderId + " has been shipped.");
+            n.setEntityType("ORDER");
+            n.setEntityId(orderId);
+            notificationRepository.save(n);
+            return saved;
+        }
+
+        // SHIPPED → DELIVERED (vendor marks delivered)
+        if ("SHIPPED".equals(current) && "DELIVERED".equals(newStatus)) {
+            order.setStatus("DELIVERED");
+            Order saved = orderRepository.save(order);
+            Notification n = new Notification();
+            n.setUser(order.getCustomer());
+            n.setType("ORDER_DELIVERED");
+            n.setTitle("Order #" + orderId + " delivered");
+            n.setBody("Your order #" + orderId + " has been marked as delivered.");
+            n.setEntityType("ORDER");
+            n.setEntityId(orderId);
+            notificationRepository.save(n);
+
+            // Mark COD commissions as PAID so vendor analytics update
+            List<VendorCommission> commissions = vendorCommissionRepository.findByOrderId(orderId);
+            for (VendorCommission c : commissions) {
+                if (!"PAID".equals(c.getStatus())) {
+                    c.setStatus("PAID");
+                    vendorCommissionRepository.save(c);
+                }
+            }
+
+            // Positive trust score for both vendor and buyer
+            trustService.adjustScore(order.getCustomer().getId(), new BigDecimal("2"),
+                "ORDER_DELIVERED_SUCCESSFULLY",
+                "Order #" + orderId + " delivered successfully");
+            // The vendor who marked it delivered also gets a boost
+            trustService.adjustScore(vendorId, new BigDecimal("1"),
+                "ORDER_FULFILLED",
+                "Fulfilled order #" + orderId + " successfully");
+            return saved;
+        }
+
+        // PLACED → CANCELLED (vendor rejects)
+        if ("PLACED".equals(current) && "CANCELLED".equals(newStatus)) {
+            order.setStatus("REJECTED");
+            Order saved = orderRepository.save(order);
+            Notification n = new Notification();
+            n.setUser(order.getCustomer());
+            n.setType("ORDER_REJECTED");
+            n.setTitle("Order #" + orderId + " rejected");
+            n.setBody("Your order #" + orderId + " has been rejected by the vendor.");
+            n.setEntityType("ORDER");
+            n.setEntityId(orderId);
+            notificationRepository.save(n);
+
+            trustService.adjustScore(vendorId, new BigDecimal("-3"),
+                "ORDER_REJECTED",
+                "Rejected order #" + orderId);
+            return saved;
+        }
+
+        throw new IllegalArgumentException("Invalid status transition: " + current + " → " + newStatus);
+    }
+
+    @Transactional
+    public Order cancelOrder(Long orderId, Long customerId) {
+        Order order = orderRepository.findById(orderId)
+            .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+
+        if (!order.getCustomer().getId().equals(customerId)) {
+            throw new SecurityException("Not your order");
+        }
+
+        String status = order.getStatus();
+        if ("SHIPPED".equals(status) || "DELIVERED".equals(status)) {
+            throw new IllegalArgumentException("Cannot cancel order after it has been shipped");
+        }
+
+        // Time limit: cannot cancel if more than 24 hours have passed since creation
+        Instant now = Instant.now();
+        long hoursSinceCreation = Duration.between(order.getCreatedAt(), now).toHours();
+        if (hoursSinceCreation > 24) {
+            throw new IllegalArgumentException("Cancellation window has expired (24 hours from order placement)");
+        }
+
+        // If cancelling before vendor approval → negative trust score impact
+        boolean beforeApproval = "PLACED".equals(status);
+        if (beforeApproval) {
+            trustService.adjustScore(customerId, new BigDecimal("-5"),
+                "ORDER_CANCELLED_BEFORE_APPROVAL",
+                "Cancelled order #" + orderId + " before vendor approval");
+        }
+
+        order.setStatus("CANCELLED");
+        Order saved = orderRepository.save(order);
+
+        // Reset cart to ACTIVE so customer can shop again
+        cartService.resetCartToActive(customerId);
+
+        Notification n = new Notification();
+        n.setUser(order.getCustomer());
+        n.setType("ORDER_CANCELLED");
+        n.setTitle("Order #" + orderId + " cancelled");
+        n.setBody("Your order #" + orderId + " has been cancelled.");
+        n.setEntityType("ORDER");
+        n.setEntityId(orderId);
+        notificationRepository.save(n);
+
+        return saved;
+    }
+
+    private User resolveVendor(CartItem cartItem) {
+        if (cartItem.getProduct() != null && cartItem.getProduct().getVendor() != null) {
+            return cartItem.getProduct().getVendor();
+        }
+        if (cartItem.getUsedListing() != null && cartItem.getUsedListing().getSeller() != null) {
+            return cartItem.getUsedListing().getSeller();
+        }
+        return null;
+    }
+}

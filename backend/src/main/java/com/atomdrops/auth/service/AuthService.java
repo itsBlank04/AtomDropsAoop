@@ -1,0 +1,119 @@
+package com.atomdrops.auth.service;
+
+import com.atomdrops.admin.model.PlatformSetting;
+import com.atomdrops.user.model.Role;
+import com.atomdrops.trust.model.TrustScore;
+import com.atomdrops.user.model.User;
+import com.atomdrops.admin.repository.PlatformSettingRepository;
+import com.atomdrops.user.repository.RoleRepository;
+import com.atomdrops.trust.repository.TrustScoreRepository;
+import com.atomdrops.user.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+@Service
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final TrustScoreRepository trustScoreRepository;
+    private final PlatformSettingRepository platformSettingRepository;
+
+    public AuthService(UserRepository userRepository, RoleRepository roleRepository, PasswordEncoder passwordEncoder, TrustScoreRepository trustScoreRepository, PlatformSettingRepository platformSettingRepository) {
+        this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.trustScoreRepository = trustScoreRepository;
+        this.platformSettingRepository = platformSettingRepository;
+    }
+
+    @Transactional
+    public User register(String email, String password, String displayName, List<String> requestedRoles) {
+        if (userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email already registered");
+        }
+
+        Set<Role> roles = new HashSet<>();
+        // Allow ADMIN role for the primary admin account
+        boolean isAdminRegistration = requestedRoles != null && requestedRoles.stream()
+                .map(String::toUpperCase)
+                .anyMatch(r -> r.equals(Role.ROLE_ADMIN));
+        if (isAdminRegistration) {
+            for (String roleName : requestedRoles) {
+                String upper = roleName.toUpperCase();
+                if (Set.of(Role.ROLE_CUSTOMER, Role.ROLE_VENDOR, Role.ROLE_TECHNICIAN, Role.ROLE_ADMIN).contains(upper)) {
+                    roles.add(roleRepository.findByName(upper)
+                            .orElseGet(() -> roleRepository.save(new Role(upper))));
+                }
+            }
+        } else {
+            for (String roleName : requestedRoles != null ? requestedRoles : List.<String>of()) {
+                String upper = roleName.toUpperCase();
+                if (Set.of(Role.ROLE_CUSTOMER, Role.ROLE_VENDOR, Role.ROLE_TECHNICIAN).contains(upper)) {
+                    roles.add(roleRepository.findByName(upper)
+                            .orElseGet(() -> roleRepository.save(new Role(upper))));
+                }
+            }
+            if (roles.isEmpty()) {
+                roles.add(roleRepository.findByName(Role.ROLE_CUSTOMER)
+                    .orElseGet(() -> roleRepository.save(new Role(Role.ROLE_CUSTOMER))));
+            }
+        }
+
+        User user = new User();
+        user.setEmail(email);
+        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setDisplayName(displayName);
+        user.setStatus("ACTIVE");
+        user.setRoles(roles);
+
+        User savedUser = userRepository.save(user);
+
+        // Create trust score
+        int initialScore = 50;
+        Optional<PlatformSetting> setting = platformSettingRepository.findById("trust.initial_score");
+        if (setting.isPresent()) {
+            initialScore = new BigDecimal(setting.get().getValue()).intValue();
+        }
+
+        TrustScore trustScore = new TrustScore();
+        trustScore.setUser(savedUser);
+        trustScore.setScore(BigDecimal.valueOf(initialScore));
+        trustScoreRepository.save(trustScore);
+
+        return savedUser;
+    }
+
+    public User authenticate(String email, String password) {
+        User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw new IllegalArgumentException("Invalid email or password");
+        }
+
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new IllegalArgumentException("Account is " + user.getStatus().toLowerCase());
+        }
+
+        return user;
+    }
+
+    public Optional<User> findById(Long id) {
+        return userRepository.findById(id);
+    }
+
+    @Transactional
+    public User update(User user) {
+        return userRepository.save(user);
+    }
+
+}

@@ -1,0 +1,7 @@
+package com.atomdrops.order.repository;
+import com.atomdrops.order.model.OrderStatusLog;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+public interface OrderStatusLogRepository extends JpaRepository<OrderStatusLog, Long> {
+    List<OrderStatusLog> findByOrderIdOrderByChangedAtDesc(Long orderId);
+}
