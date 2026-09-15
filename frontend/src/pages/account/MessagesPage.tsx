@@ -134,8 +134,9 @@ export default function MessagesPage() {
   }, [fetchedMessages])
 
   useEffect(() => {
-    if (!selected) return
-    const channel = supabase
+    if (!selected || !supabase) return
+    const client = supabase
+    const channel = client
       .channel(`messages-${selected.id}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selected.id}` },
@@ -164,7 +165,7 @@ export default function MessagesPage() {
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { client.removeChannel(channel) }
   }, [selected, queryClient])
 
   useEffect(() => {

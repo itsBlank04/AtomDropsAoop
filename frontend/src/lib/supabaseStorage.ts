@@ -1,9 +1,18 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase: SupabaseClient | null = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null
+
+function requireClient(): SupabaseClient {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the frontend .env file.')
+  }
+  return supabase
+}
 
 // Default bucket for all media
 const BUCKET = 'atomdrops'
@@ -15,11 +24,12 @@ const BUCKET = 'atomdrops'
  * @returns the public URL of the uploaded file
  */
 export async function uploadFile(folder: string, file: File): Promise<string> {
+  const client = requireClient()
   const ext = file.name.split('.').pop()
   const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
   const path = `${folder}/${uniqueName}`
 
-  const { data, error } = await supabase.storage
+  const { data, error } = await client.storage
     .from(BUCKET)
     .upload(path, file, {
       cacheControl: '3600',
@@ -32,7 +42,7 @@ export async function uploadFile(folder: string, file: File): Promise<string> {
     throw new Error(error.message || 'Upload failed')
   }
 
-  const { data: urlData } = supabase.storage
+  const { data: urlData } = client.storage
     .from(BUCKET)
     .getPublicUrl(data.path)
 
@@ -63,7 +73,7 @@ export async function deleteFile(path: string): Promise<void> {
   // Extract path from full URL
   const match = path.match(/\/storage\/v1\/object\/public\/atomdrops\/(.+)/)
   if (match) {
-    await supabase.storage.from(BUCKET).remove([match[1]])
+    await requireClient().storage.from(BUCKET).remove([match[1]])
   }
 }
 
