@@ -90,8 +90,8 @@ public class DatabaseMigrator implements CommandLineRunner {
     private void updateProductStatusConstraint() {
         try {
             jdbc.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_status_check");
-            jdbc.execute("ALTER TABLE products ADD CONSTRAINT products_status_check CHECK (status IN ('ACTIVE','SOLD','REMOVED','HIDDEN'))");
-            log.info("Updated products status constraint to include HIDDEN");
+            jdbc.execute("ALTER TABLE products ADD CONSTRAINT products_status_check CHECK (status IN ('ACTIVE','PAUSED','SOLD','REMOVED','HIDDEN'))");
+            log.info("Updated products status constraint to include PAUSED and HIDDEN");
         } catch (Exception e) {
             log.info("Could not update products status constraint: {}", e.getMessage());
         }

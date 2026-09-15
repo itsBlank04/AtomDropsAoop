@@ -111,10 +111,7 @@ export default function HeroSection() {
         {/* Left */}
         <div className="w-full max-w-lg md:w-1/2" key={`text-${current}`}>
           <div className="animate-hero-fade-up">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8c7564]">
-              AtomDrops 2026
-            </p>
-            <p className="mt-8 text-xs font-semibold uppercase tracking-[0.15em] text-[#8c7564]">
+            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#8c7564]">
               {slide.badge}
             </p>
             <h1

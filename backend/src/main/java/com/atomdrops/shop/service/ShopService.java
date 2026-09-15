@@ -15,6 +15,7 @@ import com.atomdrops.shop.model.ShopStaff;
 import com.atomdrops.shop.repository.ShopFollowerRepository;
 import com.atomdrops.shop.repository.ShopRepository;
 import com.atomdrops.shop.repository.ShopStaffRepository;
+import com.atomdrops.shop.repository.VendorProfileRepository;
 import com.atomdrops.shop.repository.VendorSubscriptionPlanRepository;
 import com.atomdrops.shop.repository.VendorSubscriptionRepository;
 import com.atomdrops.user.model.User;
@@ -34,6 +35,7 @@ public class ShopService {
     private final ProductRepository productRepository;
     private final ReviewRepository reviewRepository;
     private final AuctionRepository auctionRepository;
+    private final VendorProfileRepository vendorProfileRepository;
 
     public ShopService(ShopRepository shopRepository,
                        ShopFollowerRepository shopFollowerRepository,
@@ -43,7 +45,8 @@ public class ShopService {
                        UserRepository userRepository,
                        ProductRepository productRepository,
                        ReviewRepository reviewRepository,
-                       AuctionRepository auctionRepository) {
+                       AuctionRepository auctionRepository,
+                       VendorProfileRepository vendorProfileRepository) {
         this.shopRepository = shopRepository;
         this.shopFollowerRepository = shopFollowerRepository;
         this.shopStaffRepository = shopStaffRepository;
@@ -53,6 +56,7 @@ public class ShopService {
         this.productRepository = productRepository;
         this.reviewRepository = reviewRepository;
         this.auctionRepository = auctionRepository;
+        this.vendorProfileRepository = vendorProfileRepository;
     }
 
     @Transactional
@@ -246,6 +250,14 @@ public class ShopService {
                 Long id = Long.valueOf(slug);
                 shop = shopRepository.findById(id).orElse(null);
             } catch (NumberFormatException ignored) {}
+        }
+        if (shop == null) {
+            // Fall back to vendor-profile slugs (e.g. "shop-2-abc123") used by product-page links
+            shop = vendorProfileRepository.findByShopSlug(slug)
+                .map(profile -> shopRepository.findByVendorId(profile.getUser().getId()))
+                .filter(shops -> !shops.isEmpty())
+                .map(shops -> shops.get(0))
+                .orElse(null);
         }
         if (shop == null) {
             throw new IllegalArgumentException("Shop not found");
