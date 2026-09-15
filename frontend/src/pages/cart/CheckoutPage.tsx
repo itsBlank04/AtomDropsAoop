@@ -47,7 +47,7 @@ export default function CheckoutPage() {
   const queryClient = useQueryClient()
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null)
   const [showAddressForm, setShowAddressForm] = useState(false)
-  const [addressForm, setAddressForm] = useState({ label: '', fullName: '', phone: '', addressLine: '', city: '', area: '', postalCode: '' })
+  const [addressForm, setAddressForm] = useState({ label: 'Home', fullName: '', phone: '', addressLine: '', city: '', area: '', postalCode: '' })
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [placedOrderId, setPlacedOrderId] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null)
@@ -234,7 +234,7 @@ export default function CheckoutPage() {
           </button>
           {showAddressForm && (
             <div className="mt-3 space-y-3 rounded-xl bg-white p-4 ring-1 ring-[#e4d6c8]/60">
-              {['label', 'fullName', 'phone', 'addressLine', 'city', 'area', 'postalCode'].map((f) => (
+              {['fullName', 'phone', 'addressLine', 'city', 'area', 'postalCode'].map((f) => (
                 <input key={f} placeholder={f.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase())} value={(addressForm as any)[f]} onChange={(e) => setAddressForm({ ...addressForm, [f]: e.target.value })} className="w-full rounded-lg border border-[#e4d6c8] bg-white px-3 py-2 text-sm outline-none focus:border-[#221b16] transition-colors" />
               ))}
               <button onClick={() => createAddress.mutate(addressForm)} disabled={createAddress.isPending} className="w-full rounded-xl bg-[#221b16] py-2.5 text-sm font-semibold text-[#faf6f2] hover:bg-[#3a3028] disabled:opacity-50 transition">
