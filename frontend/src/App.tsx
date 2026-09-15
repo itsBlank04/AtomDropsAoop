@@ -14,10 +14,9 @@ import ProfilePage from './pages/account/ProfilePage'
 import WishlistPage from './pages/account/WishlistPage'
 import AddressesPage from './pages/account/AddressesPage'
 import NotificationsPage from './pages/account/NotificationsPage'
-import MessagesPage from './pages/account/MessagesPage'
+import ComingSoonPage from './pages/ComingSoonPage'
 import VendorProductsPage from './pages/vendor/VendorProductsPage'
 import VendorDashboardPage from './pages/vendor/VendorDashboardPage'
-import VendorAuctionsPage from './pages/vendor/VendorAuctionsPage'
 import VendorOrdersPage from './pages/vendor/VendorOrdersPage'
 import VendorShopPage from './pages/vendor/VendorShopPage'
 import VendorSubscriptionsPage from './pages/vendor/VendorSubscriptionsPage'
@@ -29,8 +28,7 @@ import UsedMarketplacePage from './pages/used/UsedMarketplacePage'
 import UsedListingsPage from './pages/used/UsedListingsPage'
 import UsedListingDetailPage from './pages/used/UsedListingDetailPage'
 import CreateUsedListingPage from './pages/used/CreateUsedListingPage'
-import AuctionsPage from './pages/auctions/AuctionsPage'
-import AuctionDetailPage from './pages/auctions/AuctionDetailPage'
+
 
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 
@@ -86,8 +84,10 @@ export default function App() {
         <Route path="/used-listings/:id" element={<SiteLayout><UsedListingDetailPage /></SiteLayout>} />
 
         {/* Auctions */}
-        <Route path="/auctions" element={<SiteLayout><AuctionsPage /></SiteLayout>} />
-        <Route path="/auctions/:id" element={<SiteLayout><AuctionDetailPage /></SiteLayout>} />
+        <Route path="/auctions" element={<SiteLayout><ComingSoonPage title="Auctions" description="Browse and bid on exclusive items. Auctions will be launching soon — stay tuned!" /></SiteLayout>} />
+
+        {/* Repair */}
+        <Route path="/repair" element={<SiteLayout><ComingSoonPage title="Repair Hub" description="Find certified technicians for your devices. The repair marketplace is coming soon." /></SiteLayout>} />
 
         {/* Account */}
         <Route path="/account/orders" element={<SiteLayout><AccountOrdersPage /></SiteLayout>} />
@@ -95,13 +95,13 @@ export default function App() {
         <Route path="/wishlist" element={<SiteLayout><WishlistPage /></SiteLayout>} />
         <Route path="/addresses" element={<SiteLayout><AddressesPage /></SiteLayout>} />
         <Route path="/notifications" element={<SiteLayout><NotificationsPage /></SiteLayout>} />
-        <Route path="/messages" element={<SiteLayout><MessagesPage /></SiteLayout>} />
+        <Route path="/messages" element={<SiteLayout><ComingSoonPage title="Messages" description="Real-time messaging with sellers and buyers is coming soon." /></SiteLayout>} />
 
         {/* Vendor */}
         <Route path="/vendor/dashboard" element={<SiteLayout><VendorDashboardPage /></SiteLayout>} />
         <Route path="/vendor/products" element={<SiteLayout><VendorProductsPage /></SiteLayout>} />
         <Route path="/vendor/orders" element={<SiteLayout><VendorOrdersPage /></SiteLayout>} />
-        <Route path="/vendor/auctions" element={<SiteLayout><VendorAuctionsPage /></SiteLayout>} />
+        <Route path="/vendor/auctions" element={<SiteLayout><ComingSoonPage title="Vendor Auctions" description="Create and manage auction listings for your shop. This feature is coming soon." /></SiteLayout>} />
         <Route path="/vendor/subscription" element={<SiteLayout><VendorSubscriptionsPage /></SiteLayout>} />
         <Route path="/vendor/shops" element={<SiteLayout><VendorShopManagerPage /></SiteLayout>} />
         <Route path="/vendor/shops/setup" element={<SiteLayout><VendorShopSetupPage /></SiteLayout>} />
