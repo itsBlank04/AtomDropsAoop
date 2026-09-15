@@ -12,6 +12,9 @@ node_modules/
 .mvn/wrapper/maven-wrapper.jar
 HELP.md
 
+# ================= Markdown files =================
+*.md
+
 # ================= IDE / editors =================
 .idea/
 *.iws

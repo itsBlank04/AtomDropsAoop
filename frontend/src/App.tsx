@@ -24,10 +24,7 @@ import VendorShopManagerPage from './pages/vendor/VendorShopManagerPage'
 import VendorFinancialPage from './pages/vendor/VendorFinancialPage'
 import VendorReviewsPage from './pages/vendor/VendorReviewsPage'
 import VendorShopSetupPage from './pages/vendor/VendorShopSetupPage'
-import UsedMarketplacePage from './pages/used/UsedMarketplacePage'
-import UsedListingsPage from './pages/used/UsedListingsPage'
-import UsedListingDetailPage from './pages/used/UsedListingDetailPage'
-import CreateUsedListingPage from './pages/used/CreateUsedListingPage'
+
 
 
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
@@ -78,10 +75,7 @@ export default function App() {
         <Route path="/order-success/:id" element={<SiteLayout><OrderSuccessPage /></SiteLayout>} />
 
         {/* Used Items */}
-        <Route path="/used" element={<SiteLayout><UsedMarketplacePage /></SiteLayout>} />
-        <Route path="/used-listings" element={<SiteLayout><UsedListingsPage /></SiteLayout>} />
-        <Route path="/used-listings/new" element={<SiteLayout><CreateUsedListingPage /></SiteLayout>} />
-        <Route path="/used-listings/:id" element={<SiteLayout><UsedListingDetailPage /></SiteLayout>} />
+        <Route path="/used" element={<SiteLayout><ComingSoonPage title="Used Items" description="Buy and sell pre-owned electronics. The used marketplace is coming soon." /></SiteLayout>} />
 
         {/* Auctions */}
         <Route path="/auctions" element={<SiteLayout><ComingSoonPage title="Auctions" description="Browse and bid on exclusive items. Auctions will be launching soon — stay tuned!" /></SiteLayout>} />
