@@ -1,6 +1,10 @@
 package com.atomdrops.admin.controller;
 
 import com.atomdrops.admin.model.AnalyticsSnapshot;
+import com.atomdrops.admin.dto.AdminOrderRow;
+import com.atomdrops.admin.dto.AdminProductRow;
+import com.atomdrops.order.model.Invoice;
+import com.atomdrops.order.repository.InvoiceRepository;
 import com.atomdrops.auction.model.Auction;
 import com.atomdrops.auction.model.AuctionLot;
 import com.atomdrops.admin.model.AuditLog;
@@ -19,7 +23,6 @@ import com.atomdrops.repair.model.ServiceListing;
 import com.atomdrops.shop.model.Shop;
 import com.atomdrops.notification.model.SystemNotification;
 import com.atomdrops.trust.model.TrustScore;
-import com.atomdrops.marketplace.model.UsedListing;
 import com.atomdrops.user.model.User;
 import com.atomdrops.shop.model.VendorProfile;
 import com.atomdrops.shop.model.VendorSubscriptionDeal;
@@ -50,7 +53,6 @@ import com.atomdrops.order.repository.ReturnRepository;
 import com.atomdrops.user.repository.RoleRepository;
 import com.atomdrops.repair.repository.ServiceListingRepository;
 import com.atomdrops.notification.repository.SystemNotificationRepository;
-import com.atomdrops.marketplace.repository.UsedListingRepository;
 import com.atomdrops.user.repository.UserRepository;
 import com.atomdrops.shop.repository.VendorProfileRepository;
 import jakarta.servlet.http.HttpSession;
@@ -88,7 +90,6 @@ public class AdminController {
     private final AuctionLotRepository auctionLotRepository;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
-    private final UsedListingRepository usedListingRepository;
     private final ServiceListingRepository serviceListingRepository;
     private final FraudFlagRepository fraudFlagRepository;
     private final ReportRepository reportRepository;
@@ -104,6 +105,7 @@ public class AdminController {
     private final MessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
     private final PaymentRepository paymentRepository;
+    private final InvoiceRepository invoiceRepository;
     private final TrustScoreRepository trustScoreRepository;
     private final RoleUpgradeRepository roleUpgradeRepository;
     private final ShopRepository shopRepository;
@@ -115,7 +117,7 @@ public class AdminController {
 
     public AdminController(UserRepository userRepository, AuctionRepository auctionRepository, AuctionLotRepository auctionLotRepository,
             ProductRepository productRepository, OrderRepository orderRepository,
-            UsedListingRepository usedListingRepository, ServiceListingRepository serviceListingRepository,
+            ServiceListingRepository serviceListingRepository,
             FraudFlagRepository fraudFlagRepository, ReportRepository reportRepository,
             ReturnRepository returnRepository, RoleRepository roleRepository,
             PlatformSettingRepository platformSettingRepository,
@@ -128,6 +130,7 @@ public class AdminController {
             MessageRepository messageRepository,
             ConversationRepository conversationRepository,
             PaymentRepository paymentRepository,
+            InvoiceRepository invoiceRepository,
             TrustScoreRepository trustScoreRepository,
             RoleUpgradeRepository roleUpgradeRepository,
             ShopRepository shopRepository,
@@ -141,7 +144,6 @@ public class AdminController {
         this.auctionLotRepository = auctionLotRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
-        this.usedListingRepository = usedListingRepository;
         this.serviceListingRepository = serviceListingRepository;
         this.fraudFlagRepository = fraudFlagRepository;
         this.reportRepository = reportRepository;
@@ -157,6 +159,7 @@ public class AdminController {
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
         this.paymentRepository = paymentRepository;
+        this.invoiceRepository = invoiceRepository;
         this.trustScoreRepository = trustScoreRepository;
         this.roleUpgradeRepository = roleUpgradeRepository;
         this.shopRepository = shopRepository;
@@ -260,19 +263,42 @@ public class AdminController {
         return auctionRepository.findAll();
     }
 
+    /**
+     * Admin product listing. Returns the full detail set including the primary picture,
+     * the owning shop and the shop owner's user id.
+     */
     @GetMapping("/products")
-    public List<Product> listProducts() {
-        return productRepository.findAll();
+    public List<AdminProductRow> listProducts() {
+        return productRepository.findAllForAdmin().stream()
+                .map(AdminProductRow::from)
+                .toList();
     }
 
+    /**
+     * Admin order tracking. Read-only: order status plus payment method and whether the
+     * payment/invoice has settled. Payment and invoice rows are fetched in two batch
+     * queries rather than one lookup per order.
+     */
     @GetMapping("/orders")
-    public List<Order> listOrders() {
-        return orderRepository.findAll();
-    }
+    public List<AdminOrderRow> listOrders() {
+        List<Order> orders = orderRepository.findAll();
+        if (orders.isEmpty()) {
+            return List.of();
+        }
 
-    @GetMapping("/used-listings")
-    public List<UsedListing> listUsedListings() {
-        return usedListingRepository.findAll();
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+
+        Map<Long, Payment> paymentByOrder = paymentRepository.findByOrderIdIn(orderIds).stream()
+                .filter(p -> p.getOrder() != null)
+                .collect(Collectors.toMap(p -> p.getOrder().getId(), p -> p, (a, b) -> a));
+
+        Map<Long, Invoice> invoiceByOrder = invoiceRepository.findByOrderIdIn(orderIds).stream()
+                .filter(i -> i.getOrder() != null)
+                .collect(Collectors.toMap(i -> i.getOrder().getId(), i -> i, (a, b) -> a));
+
+        return orders.stream()
+                .map(o -> AdminOrderRow.from(o, paymentByOrder.get(o.getId()), invoiceByOrder.get(o.getId())))
+                .toList();
     }
 
     @GetMapping("/service-listings")
@@ -536,18 +562,6 @@ public class AdminController {
         return Map.of("message", "Product hidden");
     }
 
-    @PutMapping("/used-listings/{id}/hide")
-    public Map<String, String> hideUsedListing(@PathVariable Long id, HttpSession session) {
-        requireAuth(session);
-        usedListingRepository.findById(id).ifPresent(l -> {
-            l.setStatus("HIDDEN");
-            usedListingRepository.save(l);
-            audit(session, "USED_LISTING_HIDDEN", "used_listings", id,
-                    Map.of("status", l.getStatus()), Map.of("status", "HIDDEN"));
-        });
-        return Map.of("message", "Used listing hidden");
-    }
-
     @PutMapping("/orders/{id}/status")
     public Map<String, String> overrideOrderStatus(@PathVariable Long id,
             @RequestBody Map<String, Object> body, HttpSession session) {
@@ -631,19 +645,6 @@ public class AdminController {
                 Map.of("name", product.getName(), "status", product.getStatus()),
                 Map.of("deletedAt", product.getDeletedAt().toString()));
         return Map.of("message", "Product deleted");
-    }
-
-    @DeleteMapping("/used-listings/{id}")
-    public Map<String, String> deleteUsedListing(@PathVariable Long id, HttpSession session) {
-        requireAuth(session);
-        UsedListing listing = usedListingRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Used listing not found"));
-        listing.setDeletedAt(Instant.now());
-        usedListingRepository.save(listing);
-        audit(session, "USED_LISTING_DELETED", "used_listings", id,
-                Map.of("title", listing.getTitle(), "status", listing.getStatus()),
-                Map.of("deletedAt", listing.getDeletedAt().toString()));
-        return Map.of("message", "Used listing deleted");
     }
 
     @DeleteMapping("/service-listings/{id}")
@@ -848,20 +849,6 @@ public class AdminController {
         return saved;
     }
 
-    @PutMapping("/used-listings/{id}")
-    public UsedListing updateUsedListing(@PathVariable Long id, @RequestBody Map<String, Object> body, HttpSession session) {
-        requireAuth(session);
-        UsedListing listing = usedListingRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Used listing not found"));
-        Map<String, Object> oldData = new HashMap<>();
-        if (body.containsKey("title")) { oldData.put("title", listing.getTitle()); listing.setTitle((String) body.get("title")); }
-        if (body.containsKey("description")) { oldData.put("description", listing.getDescription()); listing.setDescription((String) body.get("description")); }
-        if (body.containsKey("priceBdt")) { oldData.put("priceBdt", listing.getPriceBdt()); listing.setPriceBdt(new BigDecimal(body.get("priceBdt").toString())); }
-        if (body.containsKey("status")) { oldData.put("status", listing.getStatus()); listing.setStatus((String) body.get("status")); }
-        UsedListing saved = usedListingRepository.save(listing);
-        audit(session, "USED_LISTING_UPDATED", "used_listings", id, oldData.isEmpty() ? null : oldData, Map.of("updated", true));
-        return saved;
-    }
-
     @PostMapping("/users/{id}/clear-sessions")
     public Map<String, String> clearUserSessions(@PathVariable Long id, HttpSession session) {
         requireAuth(session);
@@ -879,7 +866,6 @@ public class AdminController {
             case "orders" -> orderRepository.findAll();
             case "auctions" -> auctionRepository.findAll();
             case "payments" -> paymentRepository.findAll();
-            case "used-listings" -> usedListingRepository.findAll();
             case "service-listings" -> serviceListingRepository.findAll();
             default -> throw new IllegalArgumentException("Unknown entity type: " + entityType);
         };
@@ -1085,3 +1071,4 @@ public class AdminController {
         return Map.of("message", "Upgrade cancelled and role revoked", "upgradeId", id);
     }
 }
+

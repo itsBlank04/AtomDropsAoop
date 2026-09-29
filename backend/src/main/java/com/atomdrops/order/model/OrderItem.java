@@ -6,7 +6,6 @@ import org.hibernate.annotations.NotFound;
 import org.hibernate.annotations.NotFoundAction;
 import java.math.BigDecimal;
 import java.time.Instant;
-import com.atomdrops.marketplace.model.UsedListing;
 import com.atomdrops.product.model.Product;
 import com.atomdrops.product.model.ProductVariant;
 
@@ -28,11 +27,6 @@ public class OrderItem {
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
     private Product product;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "used_listing_id")
-    @NotFound(action = NotFoundAction.IGNORE)
-    private com.atomdrops.marketplace.model.UsedListing usedListing;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_variant_id")
@@ -81,14 +75,6 @@ public class OrderItem {
 
     public void setProduct(Product product) {
         this.product = product;
-    }
-
-    public com.atomdrops.marketplace.model.UsedListing getUsedListing() {
-        return usedListing;
-    }
-
-    public void setUsedListing(com.atomdrops.marketplace.model.UsedListing usedListing) {
-        this.usedListing = usedListing;
     }
 
     public ProductVariant getProductVariant() {

@@ -5,12 +5,10 @@ import com.atomdrops.order.model.CartItem;
 import com.atomdrops.product.model.Product;
 import com.atomdrops.product.model.ProductVariant;
 import com.atomdrops.user.model.User;
-import com.atomdrops.marketplace.model.UsedListing;
 import com.atomdrops.order.repository.CartItemRepository;
 import com.atomdrops.order.repository.CartRepository;
 import com.atomdrops.product.repository.ProductRepository;
 import com.atomdrops.product.repository.ProductVariantRepository;
-import com.atomdrops.marketplace.repository.UsedListingRepository;
 import com.atomdrops.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,18 +23,15 @@ public class CartService {
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final ProductVariantRepository productVariantRepository;
-    private final UsedListingRepository usedListingRepository;
 
     public CartService(CartRepository cartRepository, CartItemRepository cartItemRepository,
             UserRepository userRepository, ProductRepository productRepository,
-            ProductVariantRepository productVariantRepository,
-            UsedListingRepository usedListingRepository) {
+            ProductVariantRepository productVariantRepository) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.userRepository = userRepository;
         this.productRepository = productRepository;
         this.productVariantRepository = productVariantRepository;
-        this.usedListingRepository = usedListingRepository;
     }
 
     @Transactional
@@ -65,8 +60,7 @@ public class CartService {
     }
 
     @Transactional
-    public CartItem addItem(Long userId, String itemType, Long productId, Long variantId,
-            Long usedListingId, int qty) {
+    public CartItem addItem(Long userId, String itemType, Long productId, Long variantId, int qty) {
         Cart cart = getActiveCart(userId);
 
         for (CartItem ci : cart.getItems()) {
@@ -94,15 +88,6 @@ public class CartService {
             ProductVariant variant = productVariantRepository.findById(variantId)
                 .orElseThrow(() -> new IllegalArgumentException("Product variant not found"));
             item.setProductVariant(variant);
-        }
-
-        if (usedListingId != null) {
-            UsedListing usedListing = usedListingRepository.findById(usedListingId)
-                .orElseThrow(() -> new IllegalArgumentException("Used listing not found"));
-            if (usedListing.getSeller() != null && usedListing.getSeller().getId().equals(userId)) {
-                throw new IllegalArgumentException("You cannot add your own listing to cart");
-            }
-            item.setUsedListing(usedListing);
         }
 
         return cartItemRepository.save(item);

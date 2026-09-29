@@ -37,9 +37,6 @@ public class AnalyticsSnapshot {
     @Column(name = "platform_fees_bdt", nullable = false)
     private BigDecimal platformFeesBdt = BigDecimal.ZERO;
 
-    @Column(name = "new_used_listings", nullable = false)
-    private int newUsedListings = 0;
-
     @Column(name = "new_repair_requests", nullable = false)
     private int newRepairRequests = 0;
 
@@ -78,8 +75,6 @@ public class AnalyticsSnapshot {
     public void setGrossRevenueBdt(BigDecimal grossRevenueBdt) { this.grossRevenueBdt = grossRevenueBdt; }
     public BigDecimal getPlatformFeesBdt() { return platformFeesBdt; }
     public void setPlatformFeesBdt(BigDecimal platformFeesBdt) { this.platformFeesBdt = platformFeesBdt; }
-    public int getNewUsedListings() { return newUsedListings; }
-    public void setNewUsedListings(int newUsedListings) { this.newUsedListings = newUsedListings; }
     public int getNewRepairRequests() { return newRepairRequests; }
     public void setNewRepairRequests(int newRepairRequests) { this.newRepairRequests = newRepairRequests; }
     public int getCompletedRepairs() { return completedRepairs; }

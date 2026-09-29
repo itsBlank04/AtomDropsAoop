@@ -55,10 +55,22 @@ public class VendorPublicController {
         List<Shop> shops = shopRepository.findByVendorId(vendorId);
         long followerCount = 0;
         Long shopId = null;
+        String shopName = profile != null ? profile.getShopName() : "";
+        String shopSlug = profile != null ? profile.getShopSlug() : "";
         if (!shops.isEmpty()) {
             Shop firstShop = shops.get(0);
             shopId = firstShop.getId();
             followerCount = shopFollowerRepository.countByShopId(shopId);
+            // The public storefront route /shop/:slug resolves against the shops table,
+            // so prefer the real shop slug here. vendor_profiles.shop_slug is generated
+            // independently at profile-creation time and can drift from shops.slug,
+            // which produces dead storefront links.
+            if (firstShop.getSlug() != null && !firstShop.getSlug().isBlank()) {
+                shopSlug = firstShop.getSlug();
+            }
+            if (firstShop.getName() != null && !firstShop.getName().isBlank()) {
+                shopName = firstShop.getName();
+            }
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -67,8 +79,8 @@ public class VendorPublicController {
         result.put("displayName", user.getDisplayName());
         result.put("email", user.getEmail());
         result.put("avatarUrl", user.getAvatarUrl() != null ? user.getAvatarUrl() : "");
-        result.put("shopName", profile != null ? profile.getShopName() : "");
-        result.put("shopSlug", profile != null ? profile.getShopSlug() : "");
+        result.put("shopName", shopName);
+        result.put("shopSlug", shopSlug);
         result.put("logoUrl", profile != null && profile.getLogoUrl() != null ? profile.getLogoUrl() : "");
         result.put("bio", profile != null && profile.getBio() != null ? profile.getBio() : "");
         result.put("location", profile != null && profile.getLocation() != null ? profile.getLocation() : "");

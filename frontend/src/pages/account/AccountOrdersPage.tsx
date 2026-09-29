@@ -12,7 +12,6 @@ type OrderItem = {
   id: number
   itemType: string
   product?: { id: number; name: string; images?: { imageUrl: string }[] }
-  usedListing?: { id: number }
   qty: number
   unitPriceBdt: number
 }

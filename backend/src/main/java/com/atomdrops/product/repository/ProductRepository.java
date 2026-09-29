@@ -17,6 +17,20 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     long countByShopId(Long shopId);
     Page<Product> findByStatus(String status, Pageable pageable);
 
+    /**
+     * Admin listing: fetches every relation the admin product view renders
+     * (pictures, category, vendor, shop and the shop's owner) in one query so the
+     * dashboard does not trigger a query per product per relation.
+     */
+    @Query("SELECT DISTINCT p FROM Product p "
+            + "LEFT JOIN FETCH p.images "
+            + "LEFT JOIN FETCH p.category "
+            + "LEFT JOIN FETCH p.vendor "
+            + "LEFT JOIN FETCH p.shop "
+            + "LEFT JOIN FETCH p.shop.vendor "
+            + "ORDER BY p.id DESC")
+    List<Product> findAllForAdmin();
+
     @Query(value = "SELECT * FROM products p WHERE p.deleted_at IS NULL AND p.status = 'ACTIVE' "
         + "AND (:search IS NULL OR LOWER(p.name::text) LIKE LOWER(CONCAT('%', :search, '%'))) "
         + "AND (:category IS NULL OR p.category_id = :category) "

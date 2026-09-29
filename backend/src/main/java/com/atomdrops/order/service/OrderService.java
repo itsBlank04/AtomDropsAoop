@@ -100,11 +100,6 @@ public class OrderService {
                 && cartItem.getProduct().getVendor().getId().equals(userId)) {
                 throw new IllegalArgumentException("You cannot purchase your own product");
             }
-            if (cartItem.getUsedListing() != null
-                && cartItem.getUsedListing().getSeller() != null
-                && cartItem.getUsedListing().getSeller().getId().equals(userId)) {
-                throw new IllegalArgumentException("You cannot purchase your own listing");
-            }
         }
 
         Address shippingAddress = addressRepository.findById(shippingAddressId)
@@ -120,8 +115,6 @@ public class OrderService {
                 if ("PAID".equals(cartItem.getProduct().getShippingType())) {
                     hasPaidShipping = true;
                 }
-            } else if (cartItem.getUsedListing() != null) {
-                unitPrice = cartItem.getUsedListing().getPriceBdt();
             }
             subtotal = subtotal.add(unitPrice.multiply(BigDecimal.valueOf(cartItem.getQty())));
         }
@@ -188,14 +181,11 @@ public class OrderService {
             orderItem.setItemType(cartItem.getItemType());
             orderItem.setProduct(cartItem.getProduct());
             orderItem.setProductVariant(cartItem.getProductVariant());
-            orderItem.setUsedListing(cartItem.getUsedListing());
             orderItem.setQty(cartItem.getQty());
 
             BigDecimal unitPrice = BigDecimal.ZERO;
             if (cartItem.getProduct() != null) {
                 unitPrice = cartItem.getProduct().getPriceBdt();
-            } else if (cartItem.getUsedListing() != null) {
-                unitPrice = cartItem.getUsedListing().getPriceBdt();
             }
             orderItem.setUnitPriceBdt(unitPrice);
             orderItemRepository.save(orderItem);
@@ -463,9 +453,6 @@ public class OrderService {
     private User resolveVendor(CartItem cartItem) {
         if (cartItem.getProduct() != null && cartItem.getProduct().getVendor() != null) {
             return cartItem.getProduct().getVendor();
-        }
-        if (cartItem.getUsedListing() != null && cartItem.getUsedListing().getSeller() != null) {
-            return cartItem.getUsedListing().getSeller();
         }
         return null;
     }

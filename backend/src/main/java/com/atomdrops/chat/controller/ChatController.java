@@ -6,13 +6,11 @@ import com.atomdrops.chat.model.ConversationMember;
 import com.atomdrops.chat.model.Message;
 import com.atomdrops.order.model.Order;
 import com.atomdrops.order.model.OrderItem;
-import com.atomdrops.marketplace.model.UsedListing;
 import com.atomdrops.user.model.User;
 import com.atomdrops.chat.repository.ConversationMemberRepository;
 import com.atomdrops.chat.repository.ConversationRepository;
 import com.atomdrops.chat.repository.MessageRepository;
 import com.atomdrops.order.repository.OrderRepository;
-import com.atomdrops.marketplace.repository.UsedListingRepository;
 import com.atomdrops.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpSession;
@@ -39,21 +37,18 @@ public class ChatController {
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
-    private final UsedListingRepository usedListingRepository;
     private final EntityManager entityManager;
 
     public ChatController(ConversationRepository conversationRepository,
             ConversationMemberRepository conversationMemberRepository,
             MessageRepository messageRepository, UserRepository userRepository,
             OrderRepository orderRepository,
-            UsedListingRepository usedListingRepository,
             EntityManager entityManager) {
         this.conversationRepository = conversationRepository;
         this.conversationMemberRepository = conversationMemberRepository;
         this.messageRepository = messageRepository;
         this.userRepository = userRepository;
         this.orderRepository = orderRepository;
-        this.usedListingRepository = usedListingRepository;
         this.entityManager = entityManager;
     }
 
@@ -122,58 +117,6 @@ public class ChatController {
         return Map.of("total", total);
     }
 
-    /** Create a used-listing conversation (open marketplace chat) */
-    @PostMapping("/conversations/used")
-    public Map<String, Object> createUsedConversation(@RequestBody Map<String, Object> body, HttpSession session) {
-        Long userId = getUserId(session);
-        if (userId == null) throw new IllegalArgumentException("Not authenticated");
-        Long listingId = Long.valueOf(body.get("listingId").toString());
-        UsedListing listing = usedListingRepository.findById(listingId)
-            .orElseThrow(() -> new IllegalArgumentException("Used listing not found"));
-        if (listing.getSeller().getId().equals(userId)) {
-            throw new IllegalArgumentException("Cannot start a conversation with yourself");
-        }
-        if (!"ACTIVE".equals(listing.getStatus())) {
-            throw new IllegalArgumentException("Listing is no longer active");
-        }
-        // Check existing conversation for this listing + buyer
-        List<ConversationMember> myMemberships = conversationMemberRepository.findByUserId(userId);
-        for (ConversationMember member : myMemberships) {
-            Conversation c = member.getConversation();
-            if ("USED".equals(c.getType()) && listingId.equals(c.getEntityId())
-                && "USED_LISTING".equals(c.getEntityType())) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("id", c.getId());
-                result.put("existing", true);
-                return result;
-            }
-        }
-        User me = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("User not found"));
-        User seller = listing.getSeller();
-        Conversation conversation = new Conversation();
-        conversation.setType("USED");
-        conversation.setEntityType("USED_LISTING");
-        conversation.setEntityId(listingId);
-        conversation.setTitle(listing.getTitle());
-        conversation.setStatus("OPEN");
-        conversation = conversationRepository.save(conversation);
-        ConversationMember member1 = new ConversationMember();
-        member1.setConversation(conversation);
-        member1.setUser(me);
-        member1.setRole("BUYER");
-        conversationMemberRepository.save(member1);
-        ConversationMember member2 = new ConversationMember();
-        member2.setConversation(conversation);
-        member2.setUser(seller);
-        member2.setRole("SELLER");
-        conversationMemberRepository.save(member2);
-        Map<String, Object> result = new HashMap<>();
-        result.put("id", conversation.getId());
-        result.put("type", conversation.getType());
-        result.put("entityId", conversation.getEntityId());
-        result.put("title", conversation.getTitle());
-        return result;
-    }
 
     /** Create or get order conversation (auto-created on checkout, accessible here) */
     @GetMapping("/conversations/order/{orderId}")

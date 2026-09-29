@@ -106,10 +106,9 @@ public class CartController {
 
         Long productId = body.containsKey("productId") ? Long.valueOf(body.get("productId").toString()) : null;
         Long variantId = body.containsKey("variantId") ? Long.valueOf(body.get("variantId").toString()) : null;
-        Long usedListingId = body.containsKey("usedListingId") ? Long.valueOf(body.get("usedListingId").toString()) : null;
         int qty = body.containsKey("qty") ? Integer.parseInt(body.get("qty").toString()) : 1;
 
-        return cartService.addItem(userId, "PRODUCT", productId, variantId, usedListingId, qty);
+        return cartService.addItem(userId, "PRODUCT", productId, variantId, qty);
     }
 
     @PutMapping("/items/{id}")

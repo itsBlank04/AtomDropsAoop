@@ -35,7 +35,7 @@ public class SecurityConfig {
                 // Public read endpoints
                 .requestMatchers(HttpMethod.GET,
                     "/api/products/**", "/api/categories/**", "/api/auctions/**",
-                    "/api/used-listings/**", "/api/technicians/**",
+                    "/api/technicians/**",
                     "/api/service-listings/**", "/api/system-notifications",
                     "/api/vendor/profile/shop/**", "/api/vendors/**",
                     "/api/users/*/profile", "/api/users/*/reviews", "/api/users/*/trust-score",

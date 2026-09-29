@@ -3,7 +3,6 @@ package com.atomdrops.order.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.Instant;
-import com.atomdrops.marketplace.model.UsedListing;
 import com.atomdrops.product.model.Product;
 import com.atomdrops.product.model.ProductVariant;
 
@@ -30,10 +29,6 @@ public class CartItem {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_variant_id")
     private ProductVariant productVariant;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "used_listing_id")
-    private com.atomdrops.marketplace.model.UsedListing usedListing;
 
     @Column(name = "qty")
     private int qty = 1;
@@ -93,14 +88,6 @@ public class CartItem {
 
     public void setProductVariant(ProductVariant productVariant) {
         this.productVariant = productVariant;
-    }
-
-    public com.atomdrops.marketplace.model.UsedListing getUsedListing() {
-        return usedListing;
-    }
-
-    public void setUsedListing(com.atomdrops.marketplace.model.UsedListing usedListing) {
-        this.usedListing = usedListing;
     }
 
     public int getQty() {

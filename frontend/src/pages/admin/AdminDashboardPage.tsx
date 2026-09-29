@@ -14,11 +14,47 @@ type PlatformSetting = { key: string; value: string; description?: string; dataT
 type SystemNotification = { id: number; title: string; body: string; type: string; active: boolean; startsAt: string }
 type VendorProfile = { id: number; shopName: string; verificationStatus: string; user?: { displayName: string } }
 type AuditLog = { id: number; action: string; entityType: string; entityId?: number; actor?: { displayName: string }; createdAt: string }
-type Product = { id: number; name: string; status: string; priceBdt?: number; vendor?: { displayName: string } }
-type UsedListing = { id: number; title: string; status: string; priceBdt?: number; seller?: { displayName: string } }
+type Product = {
+  id: number
+  name: string
+  description?: string | null
+  status: string
+  priceBdt?: number
+  shippingType?: string | null
+  viewCount?: number
+  imageUrl?: string | null
+  imageUrls?: string[]
+  categoryId?: number | null
+  categoryName?: string | null
+  vendorId?: number | null
+  vendorName?: string | null
+  shopId?: number | null
+  shopName?: string | null
+  shopSlug?: string | null
+  shopLogoUrl?: string | null
+  shopOwnerId?: number | null
+  shopOwnerName?: string | null
+  createdAt?: string
+}
+type Order = {
+  id: number
+  status: string
+  subtotalBdt?: number
+  shippingFeeBdt?: number
+  discountBdt?: number
+  taxBdt?: number
+  totalBdt?: number
+  itemCount?: number
+  customerName?: string | null
+  customerEmail?: string | null
+  paymentMethod?: string | null
+  paymentStatus?: string | null
+  invoiceNumber?: string | null
+  invoiceStatus?: string | null
+  createdAt?: string
+}
 type ServiceListing = { id: number; title: string; status: string; priceMinBdt?: number; priceMaxBdt?: number }
 type RoleUpgrade = { id: number; user: { id: number; displayName: string; email: string; roles: string[] }; role: string; amountBdt: number; status: string; activatedAt?: string; createdAt: string }
-type Order = { id: number; status: string; totalBdt?: number; customer?: { displayName: string }; items?: unknown[] }
 type SubscriptionPlan = { id: number; name: string; displayName: string; maxShops: number; priceMonthlyBdt: number; priceYearlyBdt: number; discountPercent: number; features?: string }
 type SubscriptionDeal = { id: number; title: string; description?: string; dealType: string; value: number; plan?: { id: number; displayName: string }; startsAt: string; endsAt: string; isActive: boolean }
 type AdminShop = { id: number; name: string; slug: string; status: string; verificationLevel: string; vendor?: { displayName: string }; location?: string }
@@ -41,7 +77,19 @@ const tabs: { id: AdminTab; label: string; icon: string }[] = [
 
 const PRIMARY_ADMIN_EMAIL = 'admin@login.com'
 const marketplaceRoles = ['CUSTOMER', 'VENDOR', 'TECHNICIAN']
-const ORDER_STATUSES = ['PLACED', 'APPROVED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED']
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  COD: 'Cash on Delivery',
+  BKASH: 'bKash',
+  NAGAD: 'Nagad',
+  CARD: 'Card',
+  DUMMY: 'Test/Dummy',
+}
+
+function paymentLabel(method?: string | null) {
+  if (!method) return 'No payment method'
+  return PAYMENT_METHOD_LABELS[method] ?? method
+}
 
 function money(value: unknown) {
   const amount = Number(value ?? 0)
@@ -73,7 +121,6 @@ export default function AdminDashboardPage() {
   const [roleDrafts, setRoleDrafts] = useState<Record<number, string[]>>({})
   const [settingDrafts, setSettingDrafts] = useState<Record<string, string>>({})
   const [redFlagReasons, setRedFlagReasons] = useState<Record<number, string>>({})
-  const [orderOverrides, setOrderOverrides] = useState<Record<number, string>>({})
   const [notice, setNotice] = useState({ title: '', body: '', type: 'INFO', targetRoles: 'CUSTOMER,VENDOR,TECHNICIAN', startsAt: new Date().toISOString().slice(0, 16) })
   const [planForm, setPlanForm] = useState<Partial<SubscriptionPlan>>({ name: '', displayName: '', maxShops: 1, priceMonthlyBdt: 0, priceYearlyBdt: 0, discountPercent: 0, features: '' })
   const [dealForm, setDealForm] = useState<Partial<SubscriptionDeal>>({ title: '', description: '', dealType: 'DISCOUNT', value: 0, plan: undefined, startsAt: new Date().toISOString().slice(0, 16), endsAt: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 16) })
@@ -86,7 +133,6 @@ export default function AdminDashboardPage() {
   const users = useQuery<User[]>({ queryKey: ['admin-users'], queryFn: () => apiClient.get('/api/admin/users').then(r => r.data), enabled })
   const auctions = useQuery<Auction[]>({ queryKey: ['admin-auctions'], queryFn: () => apiClient.get('/api/admin/auctions').then(r => r.data), enabled })
   const products = useQuery<Product[]>({ queryKey: ['admin-products'], queryFn: () => apiClient.get('/api/admin/products').then(r => r.data), enabled })
-  const usedListings = useQuery<UsedListing[]>({ queryKey: ['admin-used-listings'], queryFn: () => apiClient.get('/api/admin/used-listings').then(r => r.data), enabled })
   const serviceListings = useQuery<ServiceListing[]>({ queryKey: ['admin-service-listings'], queryFn: () => apiClient.get('/api/admin/service-listings').then(r => r.data), enabled })
   const orders = useQuery<Order[]>({ queryKey: ['admin-orders'], queryFn: () => apiClient.get('/api/admin/orders').then(r => r.data), enabled })
   const reports = useQuery<Report[]>({ queryKey: ['admin-reports'], queryFn: () => apiClient.get('/api/admin/reports').then(r => r.data), enabled })
@@ -166,6 +212,10 @@ export default function AdminDashboardPage() {
     ['Audit Events', auditLogs.data?.length ?? 0],
   ]
   const visibleUserRows = userRows.slice(0, 30)
+
+  // Fixed order so the tracking strip stays stable as orders change.
+  const orderStatusCounts = (['PLACED', 'APPROVED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const)
+    .map(status => [status, (orders.data || []).filter(o => o.status?.toUpperCase() === status).length] as [string, number])
 
   return (
     <div className="min-h-screen bg-[#f9f5f0] text-[#221b16]">
@@ -293,23 +343,42 @@ export default function AdminDashboardPage() {
 
             {tab === 'market' && <div className="grid gap-4 xl:grid-cols-3">
               <Panel title="New Products" count={products.data?.length || 0}>
+                {(products.data || []).length === 0 && (
+                  <p className="px-5 py-8 text-center text-sm text-[#6c5b4f]">No products yet.</p>
+                )}
                 {(products.data || []).slice(0, 20).map(item => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 border-t border-[#e4d6c8] px-5 py-3.5">
-                    <Row title={item.name} meta={`${item.vendor?.displayName || 'Vendor'} · ${money(item.priceBdt)}`} status={item.status} />
-                    <div className="flex gap-1">
+                  <div key={item.id} className="flex items-start gap-3 border-t border-[#e4d6c8] px-5 py-4">
+                    {item.imageUrl ? (
+                      <a href={item.imageUrl} target="_blank" rel="noreferrer" title="Open full picture">
+                        <img src={item.imageUrl} alt={item.name} loading="lazy"
+                          className="h-16 w-16 shrink-0 rounded-lg border border-[#e4d6c8] bg-white object-cover" />
+                      </a>
+                    ) : (
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-[#e4d6c8] text-[10px] font-semibold uppercase text-[#8c7564]">
+                        No image
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">#{item.id} {item.name}</p>
+                        <Pill value={item.status} />
+                      </div>
+                      <p className="mt-1 text-xs text-[#6c5b4f]">
+                        {money(item.priceBdt)} · {item.categoryName || 'Uncategorised'} · {item.imageUrls?.length || 0} picture(s)
+                        {item.shippingType ? ` · ${item.shippingType} shipping` : ''} · {item.viewCount ?? 0} view(s)
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#6c5b4f]">
+                        Shop: {item.shopName || '—'}{item.shopSlug ? ` (/${item.shopSlug})` : ''} · Shop ID {item.shopId ?? '—'}
+                      </p>
+                      <p className="mt-0.5 text-xs font-semibold text-[#221b16]">
+                        Shop owner ID: {item.shopOwnerId ?? '—'}{item.shopOwnerName ? ` · ${item.shopOwnerName}` : ''}
+                        {item.vendorId != null ? ` · Vendor ID ${item.vendorId}` : ''}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#6c5b4f]">Listed {dateLabel(item.createdAt)}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
                       {item.status !== 'HIDDEN' && <DangerBtn onClick={() => act({ label: 'Product hidden', title: 'Hide product', description: `Hide "${item.name}" from the marketplace? Reversible.`, tone: 'danger', request: () => apiClient.put(`/api/admin/products/${item.id}/hide`) })}>Hide</DangerBtn>}
                       <DangerBtn onClick={() => act({ label: 'Product deleted', title: 'Delete product', description: `Permanently delete "${item.name}"? Cannot be undone.`, tone: 'danger', request: () => apiClient.delete(`/api/admin/products/${item.id}`) })}>Delete</DangerBtn>
-                    </div>
-                  </div>
-                ))}
-              </Panel>
-              <Panel title="Used Listings" count={usedListings.data?.length || 0}>
-                {(usedListings.data || []).slice(0, 20).map(item => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 border-t border-[#e4d6c8] px-5 py-3.5">
-                    <Row title={item.title} meta={`${item.seller?.displayName || 'Seller'} · ${money(item.priceBdt)}`} status={item.status} />
-                    <div className="flex gap-1">
-                      {item.status !== 'HIDDEN' && <DangerBtn onClick={() => act({ label: 'Listing hidden', title: 'Hide listing', description: `Hide "${item.title}" from the marketplace? Reversible.`, tone: 'danger', request: () => apiClient.put(`/api/admin/used-listings/${item.id}/hide`) })}>Hide</DangerBtn>}
-                      <DangerBtn onClick={() => act({ label: 'Listing deleted', title: 'Delete listing', description: `Permanently delete "${item.title}"? Cannot be undone.`, tone: 'danger', request: () => apiClient.delete(`/api/admin/used-listings/${item.id}`) })}>Delete</DangerBtn>
                     </div>
                   </div>
                 ))}
@@ -324,21 +393,52 @@ export default function AdminDashboardPage() {
               </Panel>
             </div>}
 
-            {tab === 'orders' && <Panel title="Order Oversight" count={orders.data?.length || 0}>
-              {(orders.data || []).slice(0, 50).map(item => (
-                <div key={item.id} className="flex flex-col gap-2 border-t border-[#e4d6c8] px-5 py-3.5 lg:flex-row lg:items-center lg:justify-between">
-                  <Row title={`Order #${item.id}`} meta={`${item.customer?.displayName || 'Customer'} · ${money(item.totalBdt)} · ${item.items?.length || 0} item(s)`} status={item.status} />
-                  <div className="flex items-center gap-2">
-                    <select value={orderOverrides[item.id] ?? item.status} onChange={e => setOrderOverrides(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      className="rounded-lg border border-[#e4d6c8] px-2.5 py-1.5 text-xs outline-none focus:border-[#221b16]">
-                      {ORDER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <Btn onClick={() => act({ label: 'Order status overridden', title: 'Override order status', description: `Set Order #${item.id} (${item.customer?.displayName || 'Customer'}) status to ${orderOverrides[item.id] ?? item.status}?`, request: () => apiClient.put(`/api/admin/orders/${item.id}/status`, { status: orderOverrides[item.id] ?? item.status }) })}>Override</Btn>
-                    <DangerBtn onClick={() => act({ label: 'Order deleted', title: 'Cancel order', description: `Cancel Order #${item.id}? This cannot be undone.`, tone: 'danger', request: () => apiClient.delete(`/api/admin/orders/${item.id}`) })}>Cancel</DangerBtn>
+            {tab === 'orders' && <div className="space-y-4">
+              <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {orderStatusCounts.map(([status, count]) => (
+                  <div key={status} className="rounded-xl border border-[#e4d6c8] bg-white p-3.5 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#c4956a]">{status}</p>
+                    <p className="mt-1 font-[Fraunces] text-2xl">{count}</p>
                   </div>
-                </div>
-              ))}
-            </Panel>}
+                ))}
+              </section>
+              <Panel title="Order Tracking" count={orders.data?.length || 0}>
+                {(orders.data || []).length === 0 && (
+                  <p className="px-5 py-8 text-center text-sm text-[#6c5b4f]">No orders yet.</p>
+                )}
+                {(orders.data || []).map(item => (
+                  <div key={item.id} className="flex flex-col gap-3 border-t border-[#e4d6c8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">Order #{item.id}</p>
+                        <Pill value={item.status} />
+                      </div>
+                      <p className="mt-1 text-xs text-[#6c5b4f]">
+                        {item.customerName || 'Customer'} · {item.customerEmail || '—'} · {item.itemCount ?? 0} item(s)
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#6c5b4f]">
+                        Subtotal {money(item.subtotalBdt)} · Shipping {money(item.shippingFeeBdt)} · Discount {money(item.discountBdt)} · Tax {money(item.taxBdt)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#6c5b4f]">Placed {dateLabel(item.createdAt)}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-start gap-1.5 lg:items-end">
+                      <p className="font-[Fraunces] text-xl">{money(item.totalBdt)}</p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-full border border-[#e4d6c8] bg-[#f9f5f0] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[#6c5b4f]">
+                          {paymentLabel(item.paymentMethod)}
+                        </span>
+                        <Pill value={item.paymentStatus ?? undefined} />
+                        {item.invoiceNumber && (
+                          <span className="rounded-full border border-[#e4d6c8] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#6c5b4f]">
+                            {item.invoiceNumber}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </Panel>
+            </div>}
 
             {tab === 'auctions' && <Panel title="Auction Moderation" count={auctions.data?.length || 0}>
               {(auctions.data || []).map(item => {
