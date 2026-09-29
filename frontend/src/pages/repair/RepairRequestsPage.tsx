@@ -15,7 +15,6 @@ export default function RepairRequestsPage() {
   const [searchParams] = useSearchParams()
 
   const shouldOpenForm = searchParams.get('open') === 'true'
-  const techId = searchParams.get('techId')
   const techName = searchParams.get('techName')
 
   const [showForm, setShowForm] = useState(shouldOpenForm)
@@ -93,16 +92,8 @@ export default function RepairRequestsPage() {
         await apiClient.post(`/api/repair/requests/${res.data.id}/media`, { mediaUrl: url, mediaType: 'image' }).catch(() => {})
       }
 
-      // If a specific technician was selected, send direct notification (in real project chat or message)
-      if (techId) {
-        // Send simulated booking notification or note
-        await apiClient.post('/api/notifications', {
-          userId: parseInt(techId),
-          title: 'Direct Repair Request',
-          content: `Customer ${user?.displayName} has requested a bid on "${form.title}" (${res.data.id}).`,
-          link: `/repair/dashboard`
-        }).catch(() => {})
-      }
+      // NOTE: technicians are notified server-side (quote/booking notifications).
+      // The direct-request note is stored in the description (see useEffect above).
 
       return res.data
     },

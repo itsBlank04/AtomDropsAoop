@@ -156,7 +156,7 @@ public class TechnicianController {
                 .count();
 
         // Get count of open/quoted requests they can bid on
-        long incomingRequests = repairRequestRepository.findByStatusOrderByEmergencyDescCreatedAtDesc("OPEN").size();
+        long incomingRequests = repairRequestRepository.findByStatusIn(List.of("OPEN", "QUOTED")).size();
 
         return Map.of("technicianId", tech.getId(), "level", tech.getLevel(), "ratingAvg", tech.getRatingAvg(),
                 "completionRate", tech.getCompletionRate(), "status", tech.getStatus(), "totalJobs", totalJobs,

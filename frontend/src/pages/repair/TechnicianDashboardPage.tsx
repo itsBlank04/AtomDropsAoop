@@ -53,12 +53,25 @@ export default function TechnicianDashboardPage() {
   const { data: openRequests = [] } = useQuery<any[]>({
     queryKey: ['open-repair-requests'],
     queryFn: () => apiClient.get('/api/repair/requests/open').then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
   })
+
+  // 2b. Technician's own quotes (to show quoted state + track acceptance)
+  const { data: myQuotes = [] } = useQuery<any[]>({
+    queryKey: ['my-repair-quotes'],
+    queryFn: () => apiClient.get('/api/repair/quotes/mine').then(r => (Array.isArray(r.data) ? r.data : [])),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
+  })
+  const quotedRequestIds: Set<number> = new Set(myQuotes.map((q: any) => q.request?.id ?? q.requestId))
 
   // 3. Fetch Technician's Bookings (Active Jobs)
   const { data: bookings = [] } = useQuery<any[]>({
     queryKey: ['technician-bookings'],
     queryFn: () => apiClient.get('/api/repair/bookings/mine').then(r => Array.isArray(r.data) ? r.data : []),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
   })
 
   // 4. Fetch Earnings list
@@ -72,7 +85,7 @@ export default function TechnicianDashboardPage() {
     mutationFn: ({ reqId, data }: { reqId: number, data: any }) => 
       apiClient.post(`/api/repair/requests/${reqId}/quotes`, data),
     onSuccess: () => {
-      toast.success('Bid quote submitted successfully')
+      toast.success('Quote submitted — customer will be notified. Track it in Repair Jobs → My Quotes.')
       setSelectedBidReq(null)
       setBidForm({
         quoteBdt: '',
@@ -83,9 +96,21 @@ export default function TechnicianDashboardPage() {
         serviceNotes: ''
       })
       queryClient.invalidateQueries({ queryKey: ['open-repair-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['my-repair-quotes'] })
       queryClient.invalidateQueries({ queryKey: ['technician-dashboard'] })
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to submit proposal')
+    onError: (e: any) => {
+      const msg: string = e.response?.data?.error || e.response?.data?.message || 'Failed to submit proposal'
+      if (msg.toLowerCase().includes('already submitted')) {
+        toast.error('You already quoted on this request — track it in Repair Jobs → My Quotes')
+        queryClient.invalidateQueries({ queryKey: ['my-repair-quotes'] })
+      } else if (msg.toLowerCase().includes('no longer accepting')) {
+        toast.error('This request is no longer accepting quotes')
+        queryClient.invalidateQueries({ queryKey: ['open-repair-requests'] })
+      } else {
+        toast.error(msg)
+      }
+    },
   })
 
   const updateStatusMutation = useMutation({
@@ -373,6 +398,8 @@ export default function TechnicianDashboardPage() {
                         </div>
                         {r.emergency ? (
                           <span className="rounded bg-red-100 text-[9px] font-bold text-red-800 px-2.5 py-0.5 uppercase tracking-wider animate-pulse">Emergency</span>
+                        ) : r.status === 'QUOTED' ? (
+                          <span className="rounded bg-amber-100 text-[9px] font-bold text-amber-800 px-2.5 py-0.5 uppercase tracking-wider">Quoted</span>
                         ) : (
                           <span className="rounded bg-[#f9f5f0] text-[9px] font-bold text-[#6c5b4f] px-2.5 py-0.5 uppercase tracking-wider">Open</span>
                         )}
@@ -402,12 +429,18 @@ export default function TechnicianDashboardPage() {
 
                     <div className="mt-6 pt-4 border-t border-outline-variant/20 flex items-center justify-between">
                       <span className="text-label-sm text-on-surface-variant">Posted {new Date(r.createdAt).toLocaleDateString()}</span>
-                      <button
-                        onClick={() => setSelectedBidReq(r)}
-                        className="rounded-xl bg-primary text-on-primary px-4 py-2.5 text-label-md font-semibold hover:bg-primary/95 transition shadow-sm hover:scale-[1.02]"
-                      >
-                        Submit Proposal
-                      </button>
+                      {quotedRequestIds.has(r.id) ? (
+                        <span className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-label-md font-semibold text-emerald-700">
+                          Quote submitted
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setSelectedBidReq(r)}
+                          className="rounded-xl bg-primary text-on-primary px-4 py-2.5 text-label-md font-semibold hover:bg-primary/95 transition shadow-sm hover:scale-[1.02]"
+                        >
+                          Submit Proposal
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

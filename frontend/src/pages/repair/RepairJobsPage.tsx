@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 
 export default function RepairJobsPage() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<'open' | 'active' | 'completed'>('open')
+  const [activeTab, setActiveTab] = useState<'open' | 'quotes' | 'active' | 'completed'>('open')
 
   const [selectedBidReq, setSelectedBidReq] = useState<any | null>(null)
   const [bidForm, setBidForm] = useState({
@@ -30,12 +30,27 @@ export default function RepairJobsPage() {
   const { data: openRequests = [] } = useQuery<any[]>({
     queryKey: ['open-repair-requests'],
     queryFn: () => apiClient.get('/api/repair/requests/open').then(r => (Array.isArray(r.data) ? r.data : [])),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
+  })
+
+  const { data: myQuotes = [] } = useQuery<any[]>({
+    queryKey: ['my-repair-quotes'],
+    queryFn: () => apiClient.get('/api/repair/quotes/mine').then(r => (Array.isArray(r.data) ? r.data : [])),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
   })
 
   const { data: bookings = [] } = useQuery<any[]>({
     queryKey: ['technician-bookings'],
     queryFn: () => apiClient.get('/api/repair/bookings/mine').then(r => (Array.isArray(r.data) ? r.data : [])),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
   })
+
+  const quotedRequestIds = new Set(myQuotes.map((q: any) => q.request?.id ?? q.requestId))
+  const pendingQuotes = myQuotes.filter((q: any) => q.status === 'SENT')
+  const decidedQuotes = myQuotes.filter((q: any) => q.status !== 'SENT')
 
   const activeBookings = bookings.filter((b: any) => b.status !== 'COMPLETED' && b.status !== 'CLOSED')
   const completedBookings = bookings.filter((b: any) => b.status === 'COMPLETED' || b.status === 'CLOSED')
@@ -44,12 +59,24 @@ export default function RepairJobsPage() {
     mutationFn: ({ reqId, data }: { reqId: number; data: any }) =>
       apiClient.post(`/api/repair/requests/${reqId}/quotes`, data),
     onSuccess: () => {
-      toast.success('Bid quote submitted')
+      toast.success('Quote submitted — customer will be notified')
       setSelectedBidReq(null)
       setBidForm({ quoteBdt: '', plan: '', estimatedDuration: '2-3 hours', visitCharge: '300', requiredParts: '', serviceNotes: '' })
       queryClient.invalidateQueries({ queryKey: ['open-repair-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['my-repair-quotes'] })
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to submit bid'),
+    onError: (e: any) => {
+      const msg: string = e.response?.data?.error || e.response?.data?.message || 'Failed to submit bid'
+      if (msg.toLowerCase().includes('already submitted')) {
+        toast.error('You already quoted on this request — track it in My Quotes')
+        queryClient.invalidateQueries({ queryKey: ['my-repair-quotes'] })
+      } else if (msg.toLowerCase().includes('no longer accepting')) {
+        toast.error('This request is no longer accepting quotes')
+        queryClient.invalidateQueries({ queryKey: ['open-repair-requests'] })
+      } else {
+        toast.error(msg)
+      }
+    },
   })
 
   const updateStatusMutation = useMutation({
@@ -90,10 +117,12 @@ export default function RepairJobsPage() {
     mutationFn: ({ bookingId, data }: { bookingId: number; data: any }) =>
       apiClient.put(`/api/repair/bookings/${bookingId}/complete`, data),
     onSuccess: () => {
-      toast.success('Job completed!')
+      toast.success('Job completed! Dashboard and earnings updated.')
       setSelectedBookingComplete(null)
       setCompleteForm({ warrantyDays: '30', notes: '' })
       queryClient.invalidateQueries({ queryKey: ['technician-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['technician-dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['technician-earnings'] })
     },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Failed to complete job'),
   })
@@ -142,6 +171,7 @@ export default function RepairJobsPage() {
         <div className="flex border-b border-outline-variant/30 gap-6 text-label-md font-semibold uppercase tracking-wider mb-8">
           {([
             { key: 'open', label: 'Open Jobs', count: openRequests.length },
+            { key: 'quotes', label: 'My Quotes', count: myQuotes.length },
             { key: 'active', label: 'Active Jobs', count: activeBookings.length },
             { key: 'completed', label: 'Completed', count: completedBookings.length },
           ] as const).map(tab => (
@@ -181,6 +211,8 @@ export default function RepairJobsPage() {
                         </div>
                         {r.emergency ? (
                           <span className="rounded bg-red-100 text-[9px] font-bold text-red-800 px-2.5 py-0.5 uppercase animate-pulse shrink-0">Emergency</span>
+                        ) : r.status === 'QUOTED' ? (
+                          <span className="rounded bg-amber-100 text-[9px] font-bold text-amber-800 px-2.5 py-0.5 uppercase shrink-0">Quoted</span>
                         ) : (
                           <span className="rounded bg-surface-container-high text-[9px] font-bold text-on-surface-variant px-2.5 py-0.5 uppercase shrink-0">Open</span>
                         )}
@@ -205,9 +237,65 @@ export default function RepairJobsPage() {
                     </div>
                     <div className="mt-6 pt-4 border-t border-outline-variant/20 flex items-center justify-between">
                       <span className="text-label-sm text-on-surface-variant">{new Date(r.createdAt).toLocaleDateString()}</span>
-                      <button onClick={() => setSelectedBidReq(r)} className="rounded-xl bg-primary text-on-primary px-5 py-2.5 text-label-md font-semibold hover:bg-primary/95 transition shadow-sm hover:scale-[1.02] active:scale-95">
-                        Submit Quote
-                      </button>
+                      {quotedRequestIds.has(r.id) ? (
+                        <span className="rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-2.5 text-label-md font-semibold text-emerald-700">
+                          Quote submitted — see My Quotes
+                        </span>
+                      ) : (
+                        <button onClick={() => setSelectedBidReq(r)} className="rounded-xl bg-primary text-on-primary px-5 py-2.5 text-label-md font-semibold hover:bg-primary/95 transition shadow-sm hover:scale-[1.02] active:scale-95">
+                          Submit Quote
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MY QUOTES ── */}
+        {activeTab === 'quotes' && (
+          <div className="space-y-4 animate-fadeIn">
+            {myQuotes.length === 0 ? (
+              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-12 text-center text-on-surface-variant shadow-sm">
+                <span className="material-symbols-outlined text-[48px] text-outline mb-3 block">request_quote</span>
+                <p className="text-body-md font-bold text-on-surface">No quotes submitted yet</p>
+                <p className="text-label-sm mt-1">Submit a quote on an open job — its status (waiting / accepted / rejected) will appear here.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pendingQuotes.length > 0 && (
+                  <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Waiting for customer ({pendingQuotes.length})</p>
+                )}
+                {pendingQuotes.map((q: any) => (
+                  <div key={q.id} className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                    <div>
+                      <h4 className="font-semibold text-body-md text-on-surface">{q.request?.title || `Request #${q.request?.id ?? ''}`}</h4>
+                      <p className="text-label-sm text-on-surface-variant mt-1 line-clamp-2">{q.request?.description}</p>
+                      <p className="text-label-sm text-on-surface-variant mt-2">Your quote: <strong className="text-on-surface">{q.quoteBdt} BDT</strong>{q.visitCharge ? ` (incl. ${q.visitCharge} BDT visit)` : ''} · {q.estimatedDuration || ''}</p>
+                    </div>
+                    <div className="flex md:flex-col items-start md:items-end justify-between gap-2 shrink-0">
+                      <span className="rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold px-3 py-1 uppercase">Waiting</span>
+                      <span className="text-label-sm text-on-surface-variant">{q.createdAt ? new Date(q.createdAt).toLocaleDateString() : ''}</span>
+                    </div>
+                  </div>
+                ))}
+                {decidedQuotes.length > 0 && (
+                  <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant pt-4">Decided ({decidedQuotes.length})</p>
+                )}
+                {decidedQuotes.map((q: any) => (
+                  <div key={q.id} className={`rounded-2xl border p-6 shadow-sm flex flex-col md:flex-row justify-between gap-4 ${q.status === 'ACCEPTED' ? 'border-emerald-200/60 bg-surface-container-lowest' : 'border-outline-variant/30 bg-surface-container-lowest opacity-80'}`}>
+                    <div>
+                      <h4 className="font-semibold text-body-md text-on-surface">{q.request?.title || `Request #${q.request?.id ?? ''}`}</h4>
+                      <p className="text-label-sm text-on-surface-variant mt-2">Your quote: <strong className="text-on-surface">{q.quoteBdt} BDT</strong></p>
+                      {q.status === 'ACCEPTED' && (
+                        <p className="text-label-sm text-emerald-700 font-semibold mt-1">Accepted — see Active Jobs for the booking.</p>
+                      )}
+                    </div>
+                    <div className="flex md:flex-col items-start md:items-end justify-between gap-2 shrink-0">
+                      <span className={`rounded-full text-[10px] font-bold px-3 py-1 uppercase ${q.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-high text-on-surface-variant'}`}>{q.status}</span>
+                      <span className="text-label-sm text-on-surface-variant">{q.updatedAt ? new Date(q.updatedAt).toLocaleDateString() : ''}</span>
                     </div>
                   </div>
                 ))}

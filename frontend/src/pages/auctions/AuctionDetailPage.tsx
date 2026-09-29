@@ -225,13 +225,28 @@ export default function AuctionDetailPage() {
   const bidMutation = useMutation({
     mutationFn: ({ lotId, amountBdt }: { lotId: number; amountBdt: number }) => apiClient.post(`/api/auction-lots/${lotId}/bids`, { amountBdt }),
     onSuccess: (_, variables) => {
-      toast.success('Bid locked in')
+      toast.success('Bid locked in — you are now the current bid')
       setBidDrafts(previous => ({ ...previous, [variables.lotId]: '' }))
       queryClient.invalidateQueries({ queryKey: ['auction', id] })
       queryClient.invalidateQueries({ queryKey: ['auction-bids', id] })
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
     },
-    onError: (error: any) => toast.error(error.response?.data?.error || 'Failed to place bid'),
+    onError: (error: any, variables) => {
+      const message: string = error.response?.data?.error || error.response?.data?.message || 'Failed to place bid'
+      // Price moved while bidding (rival bid landed first): refresh and offer the new minimum.
+      const match = message.match(/at least\s+([\d.,]+)/i)
+      if (match) {
+        const freshMinimum = Number(match[1].replace(/,/g, ''))
+        queryClient.invalidateQueries({ queryKey: ['auction', id] })
+        queryClient.invalidateQueries({ queryKey: ['auction-bids', id] })
+        if (Number.isFinite(freshMinimum) && variables) {
+          setBidDrafts(previous => ({ ...previous, [variables.lotId]: String(freshMinimum) }))
+          toast.error(`Price moved — minimum is now ${money(freshMinimum)}. Your bid was updated, tap Bid again.`)
+          return
+        }
+      }
+      toast.error(message)
+    },
   })
 
   const acceptRules = useMutation({
@@ -376,8 +391,13 @@ export default function AuctionDetailPage() {
             const nextBid = minNextBid(lot)
             const increment = numeric(lot.minBidIncrementBdt || 0)
             const isHighest = !!user && topBid?.bidder?.id === user.id && lot.status === 'ACTIVE'
+            const myBidCount = !!user ? bids.filter(b => b.bidder?.id === user.id).length : 0
+            const myBest = !!user ? bids.filter(b => b.bidder?.id === user.id).reduce((max, b) => Math.max(max, numeric(b.amountBdt)), 0) : 0
+            const isOutbid = !!user && myBidCount > 0 && !!topBid && topBid.bidder?.id !== user.id && (lot.status === 'ACTIVE' || auction.status === 'ACTIVE')
+            const isClosed = auction.status === 'CLOSED' || lot.status === 'CLOSED'
             const watched = watchedLotIds.has(lot.id)
             const myWin = myWins.find(win => win.lot?.id === lot.id)
+            const iLostClosed = !!user && isClosed && myBidCount > 0 && !myWin
             const heat = heatScore(lot, bids, auction.status)
             const pulse = pulseLotId === lot.id
 
@@ -443,6 +463,25 @@ export default function AuctionDetailPage() {
                       <PriceTile label="Bidders" value={uniqueBidderCount(bids)} />
                     </div>
 
+                    {user && !isOwner && isHighest && (
+                      <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-800">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-[10px] text-white">✓</span>
+                        <span>You are WINNING this lot at {money(myBest)}. Minimum increment is {money(increment)}.</span>
+                      </div>
+                    )}
+                    {user && !isOwner && isOutbid && (
+                      <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-800">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-[10px] text-white">!</span>
+                        <span>You are LOSING — {topBid?.bidder?.displayName || 'Someone'} leads at {money(numeric(topBid?.amountBdt))}. Bid at least {money(nextBid)} (min increment {money(increment)}) to retake the lead.</span>
+                      </div>
+                    )}
+                    {user && !isOwner && iLostClosed && (
+                      <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs font-bold text-slate-700">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-500 text-[10px] text-white">–</span>
+                        <span>You LOST this lot — won at {money(numeric(topBid?.amountBdt))} by {topBid?.bidder?.displayName || 'another bidder'}.</span>
+                      </div>
+                    )}
+
                     <div className="mt-3 rounded-xl border border-[#e4d6c8] bg-[#f9f5f0] p-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8c7564]">Heat</p>
@@ -457,6 +496,12 @@ export default function AuctionDetailPage() {
 
                     {user && isLive && lot.status === 'ACTIVE' && !isOwner && (
                       <div className="mt-3 rounded-xl border border-[#c4956a]/30 bg-[#c4956a]/5 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
+                          <span className="text-[#6c5b4f]">Current: <span className="text-[#c4956a]">{money(visibleCurrent(lot))}</span></span>
+                          <span className={Number(bidDrafts[lot.id] || 0) > 0 && Number(bidDrafts[lot.id]) < nextBid ? 'text-rose-600' : 'text-[#8c7564]'}>
+                            Min to bid: {money(nextBid)}
+                          </span>
+                        </div>
                         <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                           <input type="number" min={nextBid} value={bidDrafts[lot.id] ?? ''} placeholder={`Min ${money(nextBid)}`}
                             onFocus={() => setSelectedLot(lot.id)}
@@ -475,7 +520,9 @@ export default function AuctionDetailPage() {
                             </button>
                           ))}
                         </div>
-                        <p className="mt-2 text-[10px] leading-4 text-[#8c7564]">Increment: {money(increment)}. Race bids recalculated server-side.</p>
+                        <p className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] font-bold leading-4 text-[#6c5b4f]">
+                          Minimum increment: <span className="text-[#c4956a]">{money(increment)}</span> — every new bid must beat the current price by at least this much. Bids are binding; race bids recalculated server-side.
+                        </p>
                       </div>
                     )}
 

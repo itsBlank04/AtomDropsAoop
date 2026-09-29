@@ -18,6 +18,11 @@ import com.atomdrops.chat.model.Conversation;
 import com.atomdrops.chat.model.ConversationMember;
 import com.atomdrops.chat.repository.ConversationMemberRepository;
 import com.atomdrops.chat.repository.ConversationRepository;
+import com.atomdrops.notification.model.Notification;
+import com.atomdrops.notification.repository.NotificationRepository;
+import com.atomdrops.admin.repository.PlatformSettingRepository;
+import com.atomdrops.repair.model.TechnicianEarning;
+import com.atomdrops.repair.repository.TechnicianEarningRepository;
 import com.atomdrops.repair.model.RepairBooking;
 import com.atomdrops.repair.model.RepairMedia;
 import com.atomdrops.repair.model.RepairProgress;
@@ -59,6 +64,9 @@ public class RepairController {
     private final CategoryRepository categoryRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository conversationMemberRepository;
+    private final NotificationRepository notificationRepository;
+    private final TechnicianEarningRepository technicianEarningRepository;
+    private final PlatformSettingRepository platformSettingRepository;
 
     public RepairController(
             RepairRequestRepository repairRequestRepository,
@@ -74,7 +82,10 @@ public class RepairController {
             UserRepository userRepository,
             CategoryRepository categoryRepository,
             ConversationRepository conversationRepository,
-            ConversationMemberRepository conversationMemberRepository) {
+            ConversationMemberRepository conversationMemberRepository,
+            NotificationRepository notificationRepository,
+            TechnicianEarningRepository technicianEarningRepository,
+            PlatformSettingRepository platformSettingRepository) {
         this.repairRequestRepository = repairRequestRepository;
         this.repairMediaRepository = repairMediaRepository;
         this.repairQuoteRepository = repairQuoteRepository;
@@ -89,21 +100,46 @@ public class RepairController {
         this.categoryRepository = categoryRepository;
         this.conversationRepository = conversationRepository;
         this.conversationMemberRepository = conversationMemberRepository;
+        this.notificationRepository = notificationRepository;
+        this.technicianEarningRepository = technicianEarningRepository;
+        this.platformSettingRepository = platformSettingRepository;
+    }
+
+    /** Save a user notification (best-effort — never breaks the main flow) */
+    private void notify(User user, String type, String title, String body, String entityType, Long entityId) {
+        try {
+            Notification n = new Notification();
+            n.setUser(user);
+            n.setType(type);
+            n.setTitle(title);
+            n.setBody(body);
+            n.setEntityType(entityType);
+            n.setEntityId(entityId);
+            notificationRepository.save(n);
+        } catch (Exception ignored) {
+        }
     }
 
     // ═══════════════════════════════════════════════
     // REPAIR REQUESTS
     // ═══════════════════════════════════════════════
 
-    /** Open requests for technicians to browse — emergency first */
+    /** Open + quoted requests for technicians to browse — emergency first.
+     *  QUOTED is included so multiple technicians can compete after the first bid. */
     @GetMapping("/requests/open")
     public List<RepairRequest> getOpenRequests(HttpSession session) {
         Long userId = (Long) session.getAttribute("userId");
         if (userId == null) throw new IllegalArgumentException("Not authenticated");
         technicianRepository.findByUserId(userId)
             .orElseThrow(() -> new IllegalArgumentException("Technician profile not found"));
-        return repairRequestRepository
-            .findByStatusAndCustomerIdNotOrderByEmergencyDescCreatedAtDesc("OPEN", userId);
+        return repairRequestRepository.findByStatusIn(List.of("OPEN", "QUOTED")).stream()
+            .filter(r -> !r.getCustomer().getId().equals(userId))
+            .sorted((a, b) -> {
+                int cmp = Boolean.compare(b.isEmergency(), a.isEmergency());
+                if (cmp != 0) return cmp;
+                return b.getCreatedAt().compareTo(a.getCreatedAt());
+            })
+            .toList();
     }
 
     /** Customer's own requests */
@@ -212,6 +248,14 @@ public class RepairController {
             .orElseThrow(() -> new IllegalArgumentException("Request not found"));
         if (request.getCustomer().getId().equals(userId))
             throw new IllegalArgumentException("You cannot quote on your own repair request");
+        if (!"OPEN".equals(request.getStatus()) && !"QUOTED".equals(request.getStatus()))
+            throw new IllegalArgumentException("This request is no longer accepting quotes");
+        boolean alreadyQuoted = repairQuoteRepository.findByRequestId(id).stream()
+            .anyMatch(q -> q.getTechnician().getId().equals(tech.getId()));
+        if (alreadyQuoted)
+            throw new IllegalArgumentException("You have already submitted a quote for this request");
+        if (body.get("quoteBdt") == null)
+            throw new IllegalArgumentException("Quote price (quoteBdt) is required");
 
         RepairQuote quote = new RepairQuote();
         quote.setRequest(request);
@@ -232,7 +276,23 @@ public class RepairController {
             repairRequestRepository.save(request);
         }
 
+        notify(request.getCustomer(), "REPAIR_QUOTE",
+            "New quote on \"" + (request.getTitle() != null ? request.getTitle() : "repair request #" + request.getId()) + "\"",
+            (tech.getUser().getDisplayName() != null ? tech.getUser().getDisplayName() : "A technician")
+                + " quoted " + saved.getQuoteBdt() + " BDT. Open the request to compare proposals.",
+            "REPAIR_REQUEST", request.getId());
+
         return saved;
+    }
+
+    /** Quotes submitted by the logged-in technician — lets technicians track SENT / ACCEPTED / REJECTED */
+    @GetMapping("/quotes/mine")
+    public List<RepairQuote> getMyQuotes(HttpSession session) {
+        Long userId = (Long) session.getAttribute("userId");
+        if (userId == null) throw new IllegalArgumentException("Not authenticated");
+        Technician tech = technicianRepository.findByUserId(userId)
+            .orElseThrow(() -> new IllegalArgumentException("Technician profile not found"));
+        return repairQuoteRepository.findByTechnicianId(tech.getId());
     }
 
     /** Get quotes for a request */
@@ -261,6 +321,8 @@ public class RepairController {
             throw new IllegalArgumentException("Not your request");
         if (quote.getTechnician().getUser().getId().equals(userId))
             throw new IllegalArgumentException("You cannot accept your own quote");
+        if (body.get("scheduledDate") == null || body.get("scheduledDate").toString().isBlank())
+            throw new IllegalArgumentException("Please choose a schedule date before accepting");
 
         quote.setStatus("ACCEPTED");
         repairQuoteRepository.save(quote);
@@ -309,6 +371,13 @@ public class RepairController {
         techMember.setUser(quote.getTechnician().getUser());
         techMember.setRole("TECHNICIAN");
         conversationMemberRepository.save(techMember);
+
+        notify(quote.getTechnician().getUser(), "REPAIR_BOOKING",
+            "Your quote was accepted!",
+            "Customer booked your quote (" + quote.getQuoteBdt() + " BDT) for \""
+                + (request.getTitle() != null ? request.getTitle() : "repair request #" + request.getId())
+                + "\". Scheduled: " + saved.getScheduledDate() + ". See Active Jobs.",
+            "REPAIR_BOOKING", saved.getId());
 
         return saved;
     }
@@ -407,9 +476,58 @@ public class RepairController {
         booking.getRequest().setStatus("COMPLETED");
         repairRequestRepository.save(booking.getRequest());
 
-        // Increment technician completed jobs
+        // Increment technician completed jobs + recompute completion rate
         tech.setCompletedJobs(tech.getCompletedJobs() + 1);
+        List<RepairBooking> allTechBookings = repairBookingRepository.findByTechnicianId(tech.getId());
+        long doneCount = allTechBookings.stream()
+            .filter(b -> "COMPLETED".equals(b.getStatus()) || "CLOSED".equals(b.getStatus()))
+            .count();
+        if (!allTechBookings.isEmpty()) {
+            tech.setCompletionRate(BigDecimal.valueOf(doneCount * 100.0 / allTechBookings.size())
+                .setScale(2, java.math.RoundingMode.HALF_UP));
+        }
         technicianRepository.save(tech);
+
+        // Record technician earning so dashboard / earnings update.
+        // Gross = accepted quote + customer-approved spare parts.
+        if (technicianEarningRepository.findByBookingId(booking.getId()).isEmpty()) {
+            BigDecimal quoteAmount = repairQuoteRepository.findByRequestId(booking.getRequest().getId()).stream()
+                .filter(q -> "ACCEPTED".equals(q.getStatus()) && q.getTechnician().getId().equals(tech.getId()))
+                .map(RepairQuote::getQuoteBdt)
+                .findFirst().orElse(BigDecimal.ZERO);
+            BigDecimal partsAmount = repairSparePartRepository.findByBookingId(booking.getId()).stream()
+                .filter(p -> p.isApprovedByCustomer())
+                .map(p -> p.getPriceBdt().multiply(BigDecimal.valueOf(p.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal gross = quoteAmount.add(partsAmount);
+
+            BigDecimal rate = new BigDecimal("8.00");
+            try {
+                rate = platformSettingRepository.findById("technician.commission_rate")
+                    .map(s -> new BigDecimal(s.getValue())).orElse(rate);
+            } catch (Exception ignored) {
+            }
+            BigDecimal commission = gross.multiply(rate)
+                .divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+
+            TechnicianEarning earning = new TechnicianEarning();
+            earning.setTechnician(tech);
+            earning.setBooking(booking);
+            earning.setGrossAmountBdt(gross);
+            earning.setCommissionRate(rate);
+            earning.setCommissionBdt(commission);
+            earning.setNetAmountBdt(gross.subtract(commission));
+            earning.setStatus("PENDING");
+            technicianEarningRepository.save(earning);
+        }
+
+        notify(booking.getRequest().getCustomer(), "REPAIR_COMPLETED",
+            "Your repair is completed",
+            "Technician " + (tech.getUser().getDisplayName() != null ? tech.getUser().getDisplayName() : "")
+                + " marked booking " + booking.getWorkOrderId() + " as completed"
+                + (booking.getWarrantyDays() > 0 ? " with a " + booking.getWarrantyDays() + "-day warranty." : ".")
+                + " Please review the service.",
+            "REPAIR_BOOKING", booking.getId());
 
         ServiceCompletion completion = new ServiceCompletion();
         completion.setBooking(booking);
@@ -475,7 +593,16 @@ public class RepairController {
         part.setPriceBdt(new BigDecimal(body.get("priceBdt").toString()));
         if (body.containsKey("reason")) part.setReason((String) body.get("reason"));
 
-        return repairSparePartRepository.save(part);
+        RepairSparePart saved = repairSparePartRepository.save(part);
+
+        notify(booking.getRequest().getCustomer(), "REPAIR_PART",
+            "Spare part needs your approval",
+            "Technician proposed \"" + saved.getPartName() + "\" ("
+                + saved.getPriceBdt() + " BDT x " + saved.getQuantity()
+                + ") for booking " + booking.getWorkOrderId() + ". Open the request to approve.",
+            "REPAIR_BOOKING", booking.getId());
+
+        return saved;
     }
 
     /** Customer approves a spare part */
@@ -488,7 +615,15 @@ public class RepairController {
         if (!part.getBooking().getRequest().getCustomer().getId().equals(userId))
             throw new IllegalArgumentException("Not your booking");
         part.setApprovedByCustomer(true);
-        return repairSparePartRepository.save(part);
+        RepairSparePart saved = repairSparePartRepository.save(part);
+
+        notify(part.getBooking().getTechnician().getUser(), "REPAIR_PART",
+            "Spare part approved",
+            "Customer approved \"" + saved.getPartName() + "\" for booking "
+                + part.getBooking().getWorkOrderId() + ".",
+            "REPAIR_BOOKING", part.getBooking().getId());
+
+        return saved;
     }
 
     // ═══════════════════════════════════════════════

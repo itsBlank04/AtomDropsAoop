@@ -1,9 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn(
+    'Supabase env missing: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env'
+  )
+}
+
+export const supabase: SupabaseClient = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+)
+
+export function isSupabaseConfigured(): boolean {
+  return Boolean(supabaseUrl && supabaseAnonKey)
+}
 
 // Default bucket for all media
 const BUCKET = 'atomdrops'
@@ -15,6 +28,9 @@ const BUCKET = 'atomdrops'
  * @returns the public URL of the uploaded file
  */
 export async function uploadFile(folder: string, file: File): Promise<string> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase storage is not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)')
+  }
   const ext = file.name.split('.').pop()
   const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
   const path = `${folder}/${uniqueName}`

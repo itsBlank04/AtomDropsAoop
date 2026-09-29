@@ -12,6 +12,7 @@ type Auction = {
   status: string
   preparationDurationMinutes: number
   activeDurationMinutes: number
+  termsAccepted?: boolean
   startTime?: string
   endTime?: string
   lots?: AuctionLot[]
@@ -107,18 +108,37 @@ export default function VendorAuctionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendor-auctions'] })
-      showResult('Auction created', 'success')
+      showResult('Auction saved', 'success')
     },
-    onError: (e: any) => showResult(e.response?.data?.error || 'Failed to create auction', 'error'),
+    onError: (e: any) => showResult(e.response?.data?.error || 'Failed to save auction', 'error'),
   })
 
   const publishAuction = useMutation({
-    mutationFn: (auctionId: number) => apiClient.post(`/api/auctions/${auctionId}/publish`),
+    mutationFn: async (auctionId: number) => {
+      // Backend rejects publish when termsAccepted=false, so accept terms first.
+      // This only runs after the user explicitly confirms publishing (which includes accepting the rules).
+      const current = auctions.find(a => a.id === auctionId)
+      if (current && !current.termsAccepted) {
+        await apiClient.put(`/api/auctions/${auctionId}`, { termsAccepted: true })
+      }
+      return apiClient.post(`/api/auctions/${auctionId}/publish`).then(r => r.data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendor-auctions'] })
-      showResult('Auction updated', 'success')
+      showResult('Auction published', 'success')
     },
-    onError: (e: any) => showResult(e.response?.data?.error || 'Failed to update auction', 'error'),
+    onError: (e: any) => {
+      const msg: string = e.response?.data?.error || e.response?.data?.message || 'Failed to publish auction'
+      if (msg.toLowerCase().includes('terms must be accepted')) {
+        showResult('Please open Edit, tick "I accept auction rules", Save, then Publish again.', 'error')
+      } else if (msg.toLowerCase().includes('at least one lot')) {
+        showResult('Add at least one lot before publishing.', 'error')
+      } else if (msg.toLowerCase().includes('only draft')) {
+        showResult('Only draft (CREATED) auctions can be published.', 'error')
+      } else {
+        showResult(msg, 'error')
+      }
+    },
   })
 
   const createLot = useMutation({
@@ -184,7 +204,7 @@ export default function VendorAuctionsPage() {
       type: auction.type,
       preparationDurationMinutes: String(auction.preparationDurationMinutes ?? 10),
       activeDurationMinutes: String(auction.activeDurationMinutes ?? 60),
-      termsAccepted: true,
+      termsAccepted: Boolean(auction.termsAccepted),
     })
     setShowForm(true)
   }
@@ -236,18 +256,27 @@ export default function VendorAuctionsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold text-[#221b16]">{a.title}</h3>
-                    <p className="text-xs text-[#8c7564]">{a.type} · {a.lots?.length || 0} lot(s)</p>
+                    <p className="text-xs text-[#8c7564]">{a.type} · {a.lots?.length || 0} lot(s) · {a.termsAccepted ? 'Terms accepted' : 'Terms not accepted'}</p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${a.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : a.status === 'PREPARING' ? 'bg-amber-100 text-amber-700' : a.status === 'CREATED' ? 'bg-[#f9f5f0] text-[#6c5b4f]' : 'bg-gray-100 text-gray-600'}`}>
                     {a.status}
                   </span>
                 </div>
+                {a.status === 'CREATED' && (!a.termsAccepted || (a.lots?.length || 0) === 0) && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {!a.termsAccepted && (a.lots?.length || 0) === 0
+                      ? 'Accept auction rules and add at least one lot before publishing.'
+                      : !a.termsAccepted
+                        ? 'Accept auction rules (Edit → tick checkbox → Save) or just hit Publish to accept and publish.'
+                        : 'Add at least one lot before publishing.'}
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button onClick={() => openEdit(a)} className="rounded-lg border border-[#e4d6c8] px-3 py-1.5 text-xs">Edit</button>
                   {a.status === 'CREATED' && (
                     <button onClick={() => askConfirm({
                       title: 'Publish auction',
-                      description: `Publish "${a.title}"? Once live, lots cannot be edited.`,
+                      description: `Publish "${a.title}"? Publishing accepts the auction rules. Once live, lots cannot be edited.${(a.lots?.length || 0) === 0 ? ' This auction has no lots yet — add one first.' : ''}`,
                       label: 'Auction published',
                       request: () => publishAuction.mutateAsync(a.id),
                     })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white">Publish</button>
@@ -306,7 +335,7 @@ export default function VendorAuctionsPage() {
                     <input type="checkbox" checked={auctionForm.termsAccepted}
                       disabled={editingLocked}
                       onChange={e => setAuctionForm({ ...auctionForm, termsAccepted: e.target.checked })} />
-                    <span className="text-xs text-[#8c7564]">I accept auction rules</span>
+                    <span className="text-xs text-[#8c7564]">I accept auction rules (required to publish)</span>
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
