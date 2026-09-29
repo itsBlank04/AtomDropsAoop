@@ -102,7 +102,8 @@ public class RepairController {
         if (userId == null) throw new IllegalArgumentException("Not authenticated");
         technicianRepository.findByUserId(userId)
             .orElseThrow(() -> new IllegalArgumentException("Technician profile not found"));
-        return repairRequestRepository.findByStatusOrderByEmergencyDescCreatedAtDesc("OPEN");
+        return repairRequestRepository
+            .findByStatusAndCustomerIdNotOrderByEmergencyDescCreatedAtDesc("OPEN", userId);
     }
 
     /** Customer's own requests */
@@ -209,6 +210,8 @@ public class RepairController {
             .orElseThrow(() -> new IllegalArgumentException("Technician profile not found"));
         RepairRequest request = repairRequestRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("Request not found"));
+        if (request.getCustomer().getId().equals(userId))
+            throw new IllegalArgumentException("You cannot quote on your own repair request");
 
         RepairQuote quote = new RepairQuote();
         quote.setRequest(request);
@@ -256,6 +259,8 @@ public class RepairController {
             .orElseThrow(() -> new IllegalArgumentException("Quote not found"));
         if (!quote.getRequest().getCustomer().getId().equals(userId))
             throw new IllegalArgumentException("Not your request");
+        if (quote.getTechnician().getUser().getId().equals(userId))
+            throw new IllegalArgumentException("You cannot accept your own quote");
 
         quote.setStatus("ACCEPTED");
         repairQuoteRepository.save(quote);
@@ -363,6 +368,8 @@ public class RepairController {
             .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
         if (!booking.getTechnician().getId().equals(tech.getId()))
             throw new IllegalArgumentException("Not your booking");
+        if (booking.getRequest().getCustomer().getId().equals(userId))
+            throw new IllegalArgumentException("You cannot work on a booking you created yourself");
 
         String newStatus = (String) body.get("status");
         booking.setStatus(newStatus);
@@ -380,6 +387,8 @@ public class RepairController {
             .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
         if (!booking.getTechnician().getId().equals(tech.getId()))
             throw new IllegalArgumentException("Not your booking");
+        if (booking.getRequest().getCustomer().getId().equals(userId))
+            throw new IllegalArgumentException("You cannot complete a booking you created yourself");
 
         booking.setStatus("COMPLETED");
 

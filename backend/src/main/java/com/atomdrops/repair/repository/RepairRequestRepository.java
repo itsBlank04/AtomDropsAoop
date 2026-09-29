@@ -9,4 +9,5 @@ public interface RepairRequestRepository extends JpaRepository<RepairRequest, Lo
     List<RepairRequest> findByStatusIn(List<String> statuses);
     List<RepairRequest> findByEmergencyTrueAndStatus(String status);
     List<RepairRequest> findByStatusOrderByEmergencyDescCreatedAtDesc(String status);
+    List<RepairRequest> findByStatusAndCustomerIdNotOrderByEmergencyDescCreatedAtDesc(String status, Long customerId);
 }

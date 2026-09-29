@@ -55,11 +55,19 @@ public class TechnicianController {
 
     @GetMapping("/technicians")
     public List<Technician> list(@RequestParam(required = false) String specialization,
-            @RequestParam(required = false) String level, @RequestParam(required = false) String status) {
-        if (specialization != null) return technicianRepository.findBySpecialization(specialization);
-        if (level != null) return technicianRepository.findByLevel(level);
-        if (status != null) return technicianRepository.findByStatus(status);
-        return technicianRepository.findAll();
+            @RequestParam(required = false) String level, @RequestParam(required = false) String status,
+            HttpSession session) {
+        List<Technician> results;
+        if (specialization != null) results = technicianRepository.findBySpecialization(specialization);
+        else if (level != null) results = technicianRepository.findByLevel(level);
+        else if (status != null) results = technicianRepository.findByStatus(status);
+        else results = technicianRepository.findAll();
+
+        Long userId = session != null ? (Long) session.getAttribute("userId") : null;
+        if (userId == null) return results;
+        return technicianRepository.findByUserId(userId)
+            .map(self -> results.stream().filter(t -> !t.getId().equals(self.getId())).toList())
+            .orElse(results);
     }
 
     @GetMapping("/technicians/{id}")
